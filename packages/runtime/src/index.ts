@@ -12,6 +12,17 @@ export type {
   RepositoryOptions,
 } from "./repository.js";
 export { processRunJob, startWorker } from "./worker.js";
+export {
+  KnowledgeRepository,
+  KnowledgeError,
+  INDEX_QUEUE,
+} from "./knowledge.js";
+export { processIndexJob } from "./index-worker.js";
+export type {
+  KnowledgeEmbedder,
+  IndexJobData,
+  IndexClaim,
+} from "./knowledge.js";
 export type {
   GenerationJob,
   ReleaseGenerator,

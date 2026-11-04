@@ -2,7 +2,7 @@
 
 Status: proposed architecture, updated with the founder's first answers. This is a design, not a statement that the capabilities below already exist.
 
-Prepared: 4 November 2026. Initial audience: SaaS founders building, operating, marketing and selling their products. Delivery target: a polished, deployable self-hosted, single-organisation alpha within one week. Public multitenant SaaS and autonomous operation are later release gates. The source code for both deployment modes is intended to be open; the project licence has not been selected.
+Prepared: 4 November 2026. Initial audience: SaaS founders building, operating, marketing and selling their products. Delivery target: a polished, deployable self-hosted, single-organisation alpha within one week. Public multitenant SaaS and autonomous operation are later release gates. The source code for both deployment modes is intended to be open; the founder selected AGPL-3.0-only on 4 November 2026.
 
 Confirmed constraints: the MacBook M5 and local Ollama are the testbed; later infrastructure is CPU-only with ample CPU/RAM and resource issues go to [XeoNote/Infrastructure-](https://github.com/XeoNote/Infrastructure-/); no additional spending beyond the existing GPT subscription; infrastructure requests will later be raised as issues in the infrastructure team's repository; `vuzmi.com` DNS is managed in Cloudflare. Do not provision paid services, purchase API credits or assume free-tier eligibility. Ollama is the first runtime provider; cloud providers remain disabled by default. An existing subscription may have an official eligible access/credit mechanism, but account eligibility and permitted integration are unverified. Only documented official authentication is in scope, never extracting or reusing another application's tokens.
 
@@ -48,38 +48,38 @@ Arrows are logical dependencies. API and worker share domain code and a database
 
 ## 2. Components and repository boundaries
 
-| Proposed location | Responsibility | Dependency rule |
-| --- | --- | --- |
-| `apps/web` | React/Vite interface, routing, command palette, queries and run event rendering | Uses API contracts; cannot import database or provider credentials |
-| `apps/api` | Fastify HTTP routes, authentication, input validation, tenancy, admission control and SSE | Calls domain services; does not execute long agent loops |
-| `apps/worker` | Queue consumers, run advancement, ingestion, retries and reconciliation | Uses domain/runtime packages; no public HTTP surface |
-| `apps/mobile` | Expo iOS companion: activity, run details, approval inbox and cancel controls | Shares contracts/tokens; mobile layouts are purpose-built |
-| `packages/core` | Initial runtime-validated contracts, workflow types, pure state transitions and deterministic route policy | No framework, database, network or secret dependencies; split contracts/domain packages only when useful |
-| `packages/db` | SQL migrations, transaction helpers and repositories | Tenant context required for tenant-owned access |
-| `packages/runtime` | Bounded agent loop, step state machine, budgets and tool policy | Provider and connector interfaces, no UI concerns |
-| `packages/providers` | Native OpenAI, Anthropic and Ollama transports | Normalises capabilities and events while retaining required opaque continuation state |
-| `packages/integrations` | Typed connectors, webhook verification and tool implementations | Effects require runtime authorisation and operation identity |
-| `packages/ui` | Web primitives and shared design tokens | Shares tokens with mobile; does not force DOM components into React Native |
-| `packages/config` | Validated environment and deployment configuration | Never serialises server secrets into clients |
+| Proposed location       | Responsibility                                                                                             | Dependency rule                                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `apps/web`              | React/Vite interface, routing, command palette, queries and run event rendering                            | Uses API contracts; cannot import database or provider credentials                                       |
+| `apps/api`              | Fastify HTTP routes, authentication, input validation, tenancy, admission control and SSE                  | Calls domain services; does not execute long agent loops                                                 |
+| `apps/worker`           | Queue consumers, run advancement, ingestion, retries and reconciliation                                    | Uses domain/runtime packages; no public HTTP surface                                                     |
+| `apps/mobile`           | Expo iOS companion: activity, run details, approval inbox and cancel controls                              | Shares contracts/tokens; mobile layouts are purpose-built                                                |
+| `packages/core`         | Initial runtime-validated contracts, workflow types, pure state transitions and deterministic route policy | No framework, database, network or secret dependencies; split contracts/domain packages only when useful |
+| `packages/db`           | SQL migrations, transaction helpers and repositories                                                       | Tenant context required for tenant-owned access                                                          |
+| `packages/runtime`      | Bounded agent loop, step state machine, budgets and tool policy                                            | Provider and connector interfaces, no UI concerns                                                        |
+| `packages/providers`    | Native OpenAI, Anthropic and Ollama transports                                                             | Normalises capabilities and events while retaining required opaque continuation state                    |
+| `packages/integrations` | Typed connectors, webhook verification and tool implementations                                            | Effects require runtime authorisation and operation identity                                             |
+| `packages/ui`           | Web primitives and shared design tokens                                                                    | Shares tokens with mobile; does not force DOM components into React Native                               |
+| `packages/config`       | Validated environment and deployment configuration                                                         | Never serialises server secrets into clients                                                             |
 
 These are boundaries to create as they become useful, rather than a requirement to populate empty packages immediately. Use a workspace package manager and a lockfile. Choose and pin supported Node, PostgreSQL and package versions at implementation time; record their support requirements in the development guide.
 
 ## 3. Domain modules
 
-| Module | Owns | First useful behaviour |
-| --- | --- | --- |
-| Workspace and access | Organisation settings, membership, roles and policies | Bootstrap one owner; no public signup in the alpha |
-| Agents | Versioned instructions, tool permissions, memory scope and route profile | Configure an agent and inspect the effective permissions |
-| Runs and workflows | Versioned workflow definitions, steps, events, budgets, approval waits | Trigger, observe, approve, cancel and retry a bounded run |
-| Model control | Provider connections, model capability registry, routing and usage | Health-check configured providers and explain a route decision |
-| Knowledge | Sources, document versions, chunks, embedding profiles and retrieval | Upload text/Markdown, ingest, retrieve and cite |
-| Memory | Explicit agent facts, preferences, decisions and summaries | Inspect, correct, expire and delete scoped memory |
-| Integrations | Connections, encrypted credentials, webhook receipts and tool manifests | One real connector for the chosen vertical slice |
-| Support | Tickets, messages, classifications, response drafts and source references | Next workflow template: draft a cited answer and wait for approval before sending |
-| Development and operations | Repository/environment references, incidents and change proposals | Read status and propose a patch or remediation; execution follows runner readiness |
-| Marketing | Campaign briefs, audiences, assets and publication proposals | Generate a reviewable campaign draft using approved knowledge |
-| Sales | Contacts, companies, opportunities and activity proposals | Prepare a next action and record an approved activity |
-| Commercial operations | Plans, entitlements, metering and billing reconciliation | Deferred from initial alpha; source remains part of the same project |
+| Module                     | Owns                                                                      | First useful behaviour                                                             |
+| -------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Workspace and access       | Organisation settings, membership, roles and policies                     | Bootstrap one owner; no public signup in the alpha                                 |
+| Agents                     | Versioned instructions, tool permissions, memory scope and route profile  | Configure an agent and inspect the effective permissions                           |
+| Runs and workflows         | Versioned workflow definitions, steps, events, budgets, approval waits    | Trigger, observe, approve, cancel and retry a bounded run                          |
+| Model control              | Provider connections, model capability registry, routing and usage        | Health-check configured providers and explain a route decision                     |
+| Knowledge                  | Sources, document versions, chunks, embedding profiles and retrieval      | Upload text/Markdown, ingest, retrieve and cite                                    |
+| Memory                     | Explicit agent facts, preferences, decisions and summaries                | Inspect, correct, expire and delete scoped memory                                  |
+| Integrations               | Connections, encrypted credentials, webhook receipts and tool manifests   | One real connector for the chosen vertical slice                                   |
+| Support                    | Tickets, messages, classifications, response drafts and source references | Next workflow template: draft a cited answer and wait for approval before sending  |
+| Development and operations | Repository/environment references, incidents and change proposals         | Read status and propose a patch or remediation; execution follows runner readiness |
+| Marketing                  | Campaign briefs, audiences, assets and publication proposals              | Generate a reviewable campaign draft using approved knowledge                      |
+| Sales                      | Contacts, companies, opportunities and activity proposals                 | Prepare a next action and record an approved activity                              |
+| Commercial operations      | Plans, entitlements, metering and billing reconciliation                  | Deferred from initial alpha; source remains part of the same project               |
 
 The workflow engine provides shared mechanics. Domain modules own business rules: support reply authorisation is not interchangeable with deployment authorisation.
 
@@ -87,18 +87,18 @@ The workflow engine provides shared mechanics. Domain modules own business rules
 
 Use opaque UUID identifiers, UTC timestamps and explicit schema versions. Every tenant-owned row has a non-null `workspace_id`, including queue payload references, events, artifacts, knowledge chunks and usage records. Single-organisation alpha is a deployment restriction, not permission to omit workspace boundaries.
 
-| Entity group | Principal records | Important invariants |
-| --- | --- | --- |
-| Identity | `users`, `workspaces`, `memberships`, `sessions` | Membership is authoritative; role changes invalidate applicable sessions/permissions |
-| Policy | `workspace_policies`, `agent_versions`, `tool_grants` | Runs bind immutable agent/policy versions; current permission is rechecked before an effect |
-| Providers | `provider_connections`, `model_profiles`, `route_profiles` | Credentials are encrypted; capability claims have verification timestamps |
-| Runtime | `workflow_versions`, `runs`, `run_steps`, `run_events` | Every state transition is transactional; event sequence is monotonic within a run |
-| Effects | `tool_invocations`, `effect_operations`, `approvals`, `outbox` | Unique operation key; argument hash and approval version must match before execution |
-| Knowledge | `sources`, `documents`, `document_versions`, `chunks`, `embedding_profiles`, `ingestion_jobs` | Chunks retain source/version provenance and access scope; an embedding space never mixes incompatible models |
-| Memory | `memory_items`, `memory_revisions` | Explicit scope, provenance, trust state, expiry and deletion lifecycle |
-| Business | `tickets`, `ticket_messages`, `contacts`, `companies`, `opportunities`, `campaigns`, `change_proposals` | Connector external IDs are unique within workspace and connection |
-| Integrations | `integration_connections`, `webhook_receipts`, `sync_cursors` | Deduplicate external events; no implicit cross-workspace credential reuse |
-| Operations | `artifacts`, `usage_ledger`, `audit_events` | Artifact access checked on download; observed usage separated from estimated cost |
+| Entity group | Principal records                                                                                       | Important invariants                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Identity     | `users`, `workspaces`, `memberships`, `sessions`                                                        | Membership is authoritative; role changes invalidate applicable sessions/permissions                         |
+| Policy       | `workspace_policies`, `agent_versions`, `tool_grants`                                                   | Runs bind immutable agent/policy versions; current permission is rechecked before an effect                  |
+| Providers    | `provider_connections`, `model_profiles`, `route_profiles`                                              | Credentials are encrypted; capability claims have verification timestamps                                    |
+| Runtime      | `workflow_versions`, `runs`, `run_steps`, `run_events`                                                  | Every state transition is transactional; event sequence is monotonic within a run                            |
+| Effects      | `tool_invocations`, `effect_operations`, `approvals`, `outbox`                                          | Unique operation key; argument hash and approval version must match before execution                         |
+| Knowledge    | `sources`, `documents`, `document_versions`, `chunks`, `embedding_profiles`, `ingestion_jobs`           | Chunks retain source/version provenance and access scope; an embedding space never mixes incompatible models |
+| Memory       | `memory_items`, `memory_revisions`                                                                      | Explicit scope, provenance, trust state, expiry and deletion lifecycle                                       |
+| Business     | `tickets`, `ticket_messages`, `contacts`, `companies`, `opportunities`, `campaigns`, `change_proposals` | Connector external IDs are unique within workspace and connection                                            |
+| Integrations | `integration_connections`, `webhook_receipts`, `sync_cursors`                                           | Deduplicate external events; no implicit cross-workspace credential reuse                                    |
+| Operations   | `artifacts`, `usage_ledger`, `audit_events`                                                             | Artifact access checked on download; observed usage separated from estimated cost                            |
 
 Use composite foreign keys such as `(workspace_id, run_id)` referencing `(workspace_id, id)`. This prevents an otherwise valid record ID from attaching one tenant's object to another tenant's row. Add indexes beginning with `workspace_id` for primary tenant access paths. Use optimistic versions on editable records and approval targets.
 
@@ -108,18 +108,18 @@ Events are an append-only audit and replay surface within a retention window. Re
 
 Expose JSON HTTP endpoints under `/v1`. Publish OpenAPI from the same runtime-validated contracts used by the server. Business mutations return persisted resource state; long operations return `202` with a run or job ID. Validate JSON schemas, pagination bounds, uploads and filters server-side.
 
-| Surface | Proposed endpoints |
-| --- | --- |
-| Session/workspace | `GET /v1/me`, `GET /v1/workspace`, `PATCH /v1/workspace` |
-| Agents/workflows | `GET/POST /v1/agents`, `GET/PATCH /v1/agents/:id`, `GET/POST /v1/workflows` |
-| Providers | `GET/POST /v1/provider-connections`, `POST /v1/provider-connections/:id/test`, `GET /v1/models` |
-| Runtime | `POST /v1/runs`, `GET /v1/runs`, `GET /v1/runs/:id`, `POST /v1/runs/:id/cancel` |
-| Run inspection | `GET /v1/runs/:id/events`, `GET /v1/runs/:id/steps`, `POST /v1/runs/:id/retry` |
-| Approvals | `GET /v1/approvals`, `POST /v1/approvals/:id/decisions` |
-| Knowledge/memory | `GET/POST /v1/sources`, `POST /v1/documents`, `POST /v1/retrieval/search`, `GET/PATCH/DELETE /v1/memory/:id` |
-| Business records | Ticket/contact/opportunity/campaign endpoints as their slice is implemented |
-| Integrations | Configuration routes restricted to administrators; signed inbound `/v1/webhooks/:provider/:connectionId` |
-| Operations | Public minimal liveness; restricted readiness, metrics and version endpoints |
+| Surface           | Proposed endpoints                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| Session/workspace | `GET /v1/me`, `GET /v1/workspace`, `PATCH /v1/workspace`                                                     |
+| Agents/workflows  | `GET/POST /v1/agents`, `GET/PATCH /v1/agents/:id`, `GET/POST /v1/workflows`                                  |
+| Providers         | `GET/POST /v1/provider-connections`, `POST /v1/provider-connections/:id/test`, `GET /v1/models`              |
+| Runtime           | `POST /v1/runs`, `GET /v1/runs`, `GET /v1/runs/:id`, `POST /v1/runs/:id/cancel`                              |
+| Run inspection    | `GET /v1/runs/:id/events`, `GET /v1/runs/:id/steps`, `POST /v1/runs/:id/retry`                               |
+| Approvals         | `GET /v1/approvals`, `POST /v1/approvals/:id/decisions`                                                      |
+| Knowledge/memory  | `GET/POST /v1/sources`, `POST /v1/documents`, `POST /v1/retrieval/search`, `GET/PATCH/DELETE /v1/memory/:id` |
+| Business records  | Ticket/contact/opportunity/campaign endpoints as their slice is implemented                                  |
+| Integrations      | Configuration routes restricted to administrators; signed inbound `/v1/webhooks/:provider/:connectionId`     |
+| Operations        | Public minimal liveness; restricted readiness, metrics and version endpoints                                 |
 
 `POST /v1/runs` and external-effect mutations accept an `Idempotency-Key`. Scope it to workspace, actor and operation; persist the request hash and response. A reused key with different input is a conflict. Retries create a new attempt record, not an invisible rewrite of a completed history.
 
@@ -283,17 +283,17 @@ Non-goals for this week: feature-complete CRM/helpdesk/marketing suite, arbitrar
 
 ## 15. Proposed architecture decisions
 
-| ADR | Choice | Alternative and reason to defer | Revisit trigger |
-| --- | --- | --- | --- |
-| 001 | TypeScript modular monolith with separate API/worker processes | Microservices add deployment, tracing and consistency costs before bounded contexts stabilise | Independent scaling or ownership demonstrated by measured bottlenecks |
-| 002 | PostgreSQL + pgvector + pg-boss | Redis/vector service/queue cluster add operational dependencies | Measured queue or retrieval contention/scale exceeds one database's practical envelope |
-| 003 | Vuzmi-owned persisted step machine; pg-boss for delivery | Temporal offers replay-based durable workflows but requires a production service and workflow-versioning discipline | Complex long-lived sagas, child workflows and compensation exceed the small explicit runtime |
-| 004 | Native provider adapters with a portable tool/event contract | Treating all providers as OpenAI-compatible loses important semantics | Re-evaluate maintained abstraction libraries against contract tests; retain escape hatches |
-| 005 | React/Vite web, Fastify API, Expo iOS companion | Native SwiftUI duplicates client expertise; a full mobile clone dilutes the first release | Native-only capabilities or mobile usage justify targeted native modules |
-| 006 | Single organisation first; tenant IDs/RLS from the start | Immediate public multitenancy expands the threat model and commercial surface | Isolation tests, quotas, backup/deletion procedures and access review pass |
-| 007 | Rule-based routing with explainable hard constraints | Learned model routing needs reliable task evals and usage data | A representative evaluation set demonstrates useful quality/cost improvements |
-| 008 | Local artifact adapter behind a storage interface | Mandatory object-store service complicates alpha setup | Hosted deployment or multiple API/worker machines require shared object storage |
-| 009 | Isolated runner boundary; no host execution fallback | Direct shell access to the API host collapses privilege boundaries | Enable only after runner policy and isolation verification pass |
+| ADR | Choice                                                         | Alternative and reason to defer                                                                                     | Revisit trigger                                                                              |
+| --- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 001 | TypeScript modular monolith with separate API/worker processes | Microservices add deployment, tracing and consistency costs before bounded contexts stabilise                       | Independent scaling or ownership demonstrated by measured bottlenecks                        |
+| 002 | PostgreSQL + pgvector + pg-boss                                | Redis/vector service/queue cluster add operational dependencies                                                     | Measured queue or retrieval contention/scale exceeds one database's practical envelope       |
+| 003 | Vuzmi-owned persisted step machine; pg-boss for delivery       | Temporal offers replay-based durable workflows but requires a production service and workflow-versioning discipline | Complex long-lived sagas, child workflows and compensation exceed the small explicit runtime |
+| 004 | Native provider adapters with a portable tool/event contract   | Treating all providers as OpenAI-compatible loses important semantics                                               | Re-evaluate maintained abstraction libraries against contract tests; retain escape hatches   |
+| 005 | React/Vite web, Fastify API, Expo iOS companion                | Native SwiftUI duplicates client expertise; a full mobile clone dilutes the first release                           | Native-only capabilities or mobile usage justify targeted native modules                     |
+| 006 | Single organisation first; tenant IDs/RLS from the start       | Immediate public multitenancy expands the threat model and commercial surface                                       | Isolation tests, quotas, backup/deletion procedures and access review pass                   |
+| 007 | Rule-based routing with explainable hard constraints           | Learned model routing needs reliable task evals and usage data                                                      | A representative evaluation set demonstrates useful quality/cost improvements                |
+| 008 | Local artifact adapter behind a storage interface              | Mandatory object-store service complicates alpha setup                                                              | Hosted deployment or multiple API/worker machines require shared object storage              |
+| 009 | Isolated runner boundary; no host execution fallback           | Direct shell access to the API host collapses privilege boundaries                                                  | Enable only after runner policy and isolation verification pass                              |
 
 Temporal's replay model is well suited to durable workflows, but its production deployment includes a Temporal Service in addition to application workers; operating that service is a deliberate tradeoff. [Workflow model](https://docs.temporal.io/workflows), [deployment](https://docs.temporal.io/production-deployment), [self-hosting considerations](https://docs.temporal.io/self-hosted-guide/production-checklist)
 
@@ -310,3 +310,37 @@ Temporal's replay model is well suited to durable workflows, but its production 
 - One week can deliver an attractive and useful foundation with one real slice. Production SaaS readiness depends on validated security, recovery, provider access, commercial decisions and live integration evidence.
 
 Evidence and source review are maintained in [RESEARCH.md](./RESEARCH.md).
+
+## 17. Knowledge implementation increment
+
+The next local slice uses pgvector exact similarity plus PostgreSQL full-text search, scoped before ranking. Native PG16 lacked the extension; install pinned official pgvector v0.8.7 against that server rather than upgrading the user's database. The helper enables the extension as its private cluster administrator. Application migration v1 stays byte-identical; append checksum-validated v2.
+
+Bounded UTF-8 text/Markdown (64 KiB per source) is versioned and deterministically chunked. A separate durable indexing queue embeds outside transactions and atomically activates a complete revision, fenced by source revision, attempt, and tombstone. Source IDs and revision references alone enter jobs. Failed or superseded indexing cannot publish partial chunks. The local embedding profile pins Ollama model `embeddinggemma:300m`, its observed digest, dimensions, L2 normalization, API version and retrieval prompt version. Query/document profiles must match; no embedding fallback or automatic profile migration is permitted.
+
+Mission knowledge is opt-in and required once selected. Admission pins source and memory revisions. The worker retrieves only those active source revisions and explicitly selected, confirmed, unexpired workspace memories. Insufficient evidence is persisted and stops generation; changed/deleted selections fail instead of substituting newer context. Persist immutable excerpts/citation identities in the run, and recheck selected revisions before accepting generated output. Ranking scores are not factual confidence. Source excerpts are untrusted data and cannot grant tools or alter policy.
+
+Memory is manually curated and workspace-scoped in this increment; raw conversations are not automatically retained as memory. Source-linked memory must refer to a real active source revision. Edits require the current memory revision. Agent/project memory scopes and automatic memory proposals remain later features.
+
+Source deletion removes active originals, revisions, chunks, vectors, and source-linked memories, leaving a content-free tombstone against resurrection. **Historical run evidence and generated/approved artifacts remain retained in this private alpha.** The interface must disclose that exception before deletion; this is removal from active retrieval, not complete erasure across history or backups. Production deletion/retention and restoration tombstones remain release gates.
+
+## 18. Private single-owner authentication increment
+
+Use maintained Better Auth 1.7.17 with its matching Expo integration, PostgreSQL-backed sessions and a dedicated validated schema/pool. Lock and version library migrations and the Vuzmi wrapper schema. No public registration, social providers, external mail, or password reset delivery is enabled. A unique database index permits one user; that account is the owner of the single local workspace. Multi-user roles and hosted tenant membership remain future work.
+
+Owner creation requires a one-time high-entropy setup key held in a private local file. Under a schema-scoped advisory lock and empty-user check, a private Better Auth instance performs signup/hashing with auto-sign-in disabled. The public instance disables signup and its HTTP adapter allowlists only implemented session/login/logout endpoints. Custom state/session helpers return safe owner fields, never session secrets. Better Auth's normal cookie protocol remains responsible for authentication transport. Setup does not verify email ownership or send mail.
+
+Sessions are DB-backed with cookie cache disabled, HttpOnly/SameSite=Lax cookies, Secure over HTTPS, exact trusted origins, and prompt logout/revocation. HTTP auth is permitted only on loopback during development. Expo uses the maintained SecureStore cookie plugin and an exact app scheme. API workspace identity derives from the authenticated single owner, not a client-selected workspace. Approval records include the authenticated actor identity; legacy development decisions remain labelled local operator.
+
+The server defaults to owner authentication. A conspicuous explicit development bypass is available only for loopback testing/simulation and is not deployable configuration. Test bootstrap/login/revocation against isolated schemas, never by seeding a known password into the operator's database. The operator chooses the actual owner credentials through the completed setup interface. Public exposure and infrastructure changes remain separate release decisions.
+
+## 19. Local approved package and runnable self-host increment
+
+The durable approved artifact already acts as the transactional local outbox. Expose a read-only package projection instead of creating a second independently committed queue. One stable JSON manifest contains the exact approved Markdown bytes and their own SHA-256, the original action-envelope fingerprint, approval revision/actor/time, route, usage, retained evidence, and events. Pending, rejected, corrupt, or foreign-workspace aggregates cannot export. Downloads do not dispatch anything. Additional generated files require their own pre-approval payload contract; do not fabricate assets by splitting or rewriting an approved document afterward.
+
+For existing-hardware evaluation, the production command runs the API and worker without file watchers; the API serves only the built web root. Both remain bound to loopback. Owner auth is mandatory; explicit simulation/auth bypasses are refused by this command. Minimal liveness and database-worker readiness endpoints contain no owner or business data. This native package is independently runnable without Docker, EAS, or additional paid services. Network deployment, TLS/private ingress, restricted migration/runtime roles, encrypted off-host backups, and public exposure remain infrastructure/release gates. No infrastructure request or DNS change is executed by preparing the package.
+
+## 20. Pinned founder workflow and source offer
+
+New missions pin `founder-release@1`; legacy records retain an explicitly unknown workflow version. Its prepare/retrieve/draft/review/save view is derived from correlated persisted event sequences and actual evidence/decision/artifact state. It does not create a second mutable scheduler. A recorded draft or saved document never marks the proposed acceptance checks as executed. Insufficient retrieval blocks drafting; simulation explicitly assembles a deterministic template. Arbitrary workflow graphs and host/tool execution remain future work.
+
+The approved package includes the workflow reference, with null for legacy history. The AGPL source offer uses a deterministic archive of clean committed HEAD. Packaging refuses dirty source, ignored/private tracked paths, submodule/export omissions and incomplete licence metadata. The API serves only the fixed reviewed archive after checking its revision, permissions, length and SHA-256; it cannot serve request-selected paths. A matching local source bundle is distinct from publishing a repository or authorizing network exposure.

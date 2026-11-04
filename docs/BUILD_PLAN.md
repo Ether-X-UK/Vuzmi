@@ -26,20 +26,20 @@ Implementation can begin once these artifacts are concrete. No additional approv
 - Ollama, OpenAI, and Claude use provider adapters; policy-based routing precedes optimization. Paid API providers are disabled by default.
 - ZERO additional costs beyond the existing GPT subscription. Use existing hardware and local tooling; no paid API calls, hosted builds, new subscriptions, or paid infrastructure. Verify any eligible subscription credits/sign-in capability before relying on it.
 - Existing infrastructure staff accept resource-request issues. [INFRASTRUCTURE_REQUEST.md](INFRASTRUCTURE_REQUEST.md) is an unposted issue draft targeting [XeoNote/Infrastructure-](https://github.com/XeoNote/Infrastructure-/). The later estate is CPU-only with ample CPU/RAM; capacity is not a blocker. Local Mac development precedes the deployment handoff. `vuzmi.com` DNS is on Cloudflare; public exposure is not assumed authorized or completed.
-- No assumed license choice, public launch, billing integration, or App Store plan.
+- Confirmed licence: AGPL-3.0-only. Public launch, billing integration and App Store distribution remain separate decisions.
 
 The architecture document owns final technical decisions and their tradeoffs. Stack revisions should update this plan and implementation contracts together.
 
 ## Workstreams and coordination
 
-| Workstream | Ownership and output | Dependency |
-| --- | --- | --- |
-| Orchestration/product | Scope, contracts, sequencing, integration, release evidence | Founder decisions and findings from all streams |
-| Architecture/research | Trust boundaries, storage, worker model, provider contracts, operational risks | Product brief and alpha workflow |
-| Design/web | Visual system, desktop/mobile layouts, run review, knowledge, approval states | Product states and shared contracts |
-| Backend/runtime | API, persistence, worker, routing, approvals, tools, outbox | Architecture and agreed schemas |
-| Knowledge/evaluation | Ingestion, retrieval, citations, memory boundaries, quality fixtures | Document model, provider interfaces, access rules |
-| iOS/operations | Companion flows, packaging, local setup, release validation | Stable API and auth contract |
+| Workstream            | Ownership and output                                                           | Dependency                                        |
+| --------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------- |
+| Orchestration/product | Scope, contracts, sequencing, integration, release evidence                    | Founder decisions and findings from all streams   |
+| Architecture/research | Trust boundaries, storage, worker model, provider contracts, operational risks | Product brief and alpha workflow                  |
+| Design/web            | Visual system, desktop/mobile layouts, run review, knowledge, approval states  | Product states and shared contracts               |
+| Backend/runtime       | API, persistence, worker, routing, approvals, tools, outbox                    | Architecture and agreed schemas                   |
+| Knowledge/evaluation  | Ingestion, retrieval, citations, memory boundaries, quality fixtures           | Document model, provider interfaces, access rules |
+| iOS/operations        | Companion flows, packaging, local setup, release validation                    | Stable API and auth contract                      |
 
 The orchestrator assigns bounded subagent tasks and prevents simultaneous edits to the same files. Independent research and design can proceed concurrently; contract changes and cross-stream integration remain sequential. Tasks report files changed, what was tested, open risks, and whether their result is implemented or only proposed.
 
@@ -47,15 +47,15 @@ The orchestrator assigns bounded subagent tasks and prevents simultaneous edits 
 
 Dates are a working schedule. Acceptance gates determine readiness; a missed gate reduces breadth rather than lowering the truthfulness of the release.
 
-| Day | Deliverable and sequence | Depends on | Acceptance evidence and focused tests |
-| --- | --- | --- | --- |
-| **1 — Wed 4 Nov** | Finish architecture and build plan; record desktop/mobile design; then create the workspace skeleton and initial sandbox run → review → approval → local artifact slice. | Product defaults and architecture/design artifacts recorded in that order. | The interface labels the sandbox explicitly. A run has real state transitions and an inspectable event sequence. Approval and rejection lead to distinct results. No invented provider call, retrieval, send, or live metric is shown. Build/type checks for created packages and a focused run-transition test pass. |
-| **2 — Thu 5 Nov** | Resolve zero-cost local runtime prerequisites; start/connect Ollama; establish PostgreSQL persistence, migrations, worker recovery, provider adapters, configuration, and deterministic routing. Replace in-memory prototype paths required by the acceptance workflow. | Shared run/action/provider contracts, initial UI slice, existing hardware/runtime availability. | A real local Ollama call succeeds and records the model used. A restart preserves queued and waiting runs. Adapter contract tests cover normalized success and failure. OpenAI/Claude stay disabled absent verified zero-cost access. A local-only route cannot fall back to a hosted provider. |
-| **3 — Fri 6 Nov** | Add supported-document ingestion, revisioned chunks/embeddings, retrieval, citations, source deletion, and minimal curated memory boundaries. | Database, worker, embedding/provider interfaces, document ownership model. | A small owned fixture set retrieves the expected source passages. Citations resolve to actual source revisions. Unsupported/empty material is reported. A deleted source does not appear in a later retrieval. Access filtering runs before context is sent to a model. |
-| **4 — Sat 7 Nov** | Complete the founder release mission: change brief → real Ollama plan and retrieved evidence → release readiness package → exact-package approval → durable local outbox. Add cancellation, errors, and bounded retries. | Days 2–3 contracts and retrieval quality gate. | An end-to-end browser/API check produces actual plan, acceptance checklist, release notes, risk notes, and deployment handoff files. The package distinguishes proposed work from verified outcomes. Rejection creates no outbox item. Editing an approved payload requires new approval. Restart/retry/replay does not duplicate the action. |
-| **5 — Sun 8 Nov** | Build the minimal Expo iOS companion for run list, run detail/evidence, and approve/reject using local tooling; finish responsive web. Add a generic dev/ops sandbox template only if the golden flow is stable. | Stable API/auth and approval semantics; available local iOS build tooling. | A real simulator/device build, if available without added cost, performs the same approval transition as web. Authentication and API errors are visible. UI reflects conflicting/stale approval state. No paid build or App Store dependency is introduced. Optional sandbox execution has no arbitrary host or production access. |
-| **6 — Mon 9 Nov** | Package self-host setup, health/readiness, safe configuration, operational logging, backup/restore procedure, and essential CI. Perform integration and accessibility checks. | Working complete workflow and deployable services. | A clean database can migrate and start. Missing secrets/configuration fail clearly. Core logs contain correlation IDs and no credentials. A backup is restored into a separate test database and the saved run remains inspectable. Keyboard use, readable contrast, and narrow-screen operation are checked. |
-| **7 — Tue 10 Nov** | Fresh-install rehearsal on existing hardware, real-Ollama founder-release regression, failure rehearsal, documentation, known limitations, and a polished deployable alpha candidate. | All mandatory alpha gates below. | A person follows setup instructions without private knowledge or new spending, produces and approves a concrete release package through real local inference, and retrieves its saved result. Provider/iOS matrices show honest incomplete statuses. No full development/sales lifecycle, public SaaS, or App Store claim is inferred. |
+| Day                | Deliverable and sequence                                                                                                                                                                                                                                                | Depends on                                                                                      | Acceptance evidence and focused tests                                                                                                                                                                                                                                                                                                         |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1 — Wed 4 Nov**  | Finish architecture and build plan; record desktop/mobile design; then create the workspace skeleton and initial sandbox run → review → approval → local artifact slice.                                                                                                | Product defaults and architecture/design artifacts recorded in that order.                      | The interface labels the sandbox explicitly. A run has real state transitions and an inspectable event sequence. Approval and rejection lead to distinct results. No invented provider call, retrieval, send, or live metric is shown. Build/type checks for created packages and a focused run-transition test pass.                         |
+| **2 — Thu 5 Nov**  | Resolve zero-cost local runtime prerequisites; start/connect Ollama; establish PostgreSQL persistence, migrations, worker recovery, provider adapters, configuration, and deterministic routing. Replace in-memory prototype paths required by the acceptance workflow. | Shared run/action/provider contracts, initial UI slice, existing hardware/runtime availability. | A real local Ollama call succeeds and records the model used. A restart preserves queued and waiting runs. Adapter contract tests cover normalized success and failure. OpenAI/Claude stay disabled absent verified zero-cost access. A local-only route cannot fall back to a hosted provider.                                               |
+| **3 — Fri 6 Nov**  | Add supported-document ingestion, revisioned chunks/embeddings, retrieval, citations, source deletion, and minimal curated memory boundaries.                                                                                                                           | Database, worker, embedding/provider interfaces, document ownership model.                      | A small owned fixture set retrieves the expected source passages. Citations resolve to actual source revisions. Unsupported/empty material is reported. A deleted source does not appear in a later retrieval. Access filtering runs before context is sent to a model.                                                                       |
+| **4 — Sat 7 Nov**  | Complete the founder release mission: change brief → real Ollama plan and retrieved evidence → release readiness package → exact-package approval → durable local outbox. Add cancellation, errors, and bounded retries.                                                | Days 2–3 contracts and retrieval quality gate.                                                  | An end-to-end browser/API check produces actual plan, acceptance checklist, release notes, risk notes, and deployment handoff files. The package distinguishes proposed work from verified outcomes. Rejection creates no outbox item. Editing an approved payload requires new approval. Restart/retry/replay does not duplicate the action. |
+| **5 — Sun 8 Nov**  | Build the minimal Expo iOS companion for run list, run detail/evidence, and approve/reject using local tooling; finish responsive web. Add a generic dev/ops sandbox template only if the golden flow is stable.                                                        | Stable API/auth and approval semantics; available local iOS build tooling.                      | A real simulator/device build, if available without added cost, performs the same approval transition as web. Authentication and API errors are visible. UI reflects conflicting/stale approval state. No paid build or App Store dependency is introduced. Optional sandbox execution has no arbitrary host or production access.            |
+| **6 — Mon 9 Nov**  | Package self-host setup, health/readiness, safe configuration, operational logging, backup/restore procedure, and essential CI. Perform integration and accessibility checks.                                                                                           | Working complete workflow and deployable services.                                              | A clean database can migrate and start. Missing secrets/configuration fail clearly. Core logs contain correlation IDs and no credentials. A backup is restored into a separate test database and the saved run remains inspectable. Keyboard use, readable contrast, and narrow-screen operation are checked.                                 |
+| **7 — Tue 10 Nov** | Fresh-install rehearsal on existing hardware, real-Ollama founder-release regression, failure rehearsal, documentation, known limitations, and a polished deployable alpha candidate.                                                                                   | All mandatory alpha gates below.                                                                | A person follows setup instructions without private knowledge or new spending, produces and approves a concrete release package through real local inference, and retrieves its saved result. Provider/iOS matrices show honest incomplete statuses. No full development/sales lifecycle, public SaaS, or App Store claim is inferred.        |
 
 ## Mandatory alpha gates
 
@@ -68,54 +68,54 @@ Dates are a working schedule. Acceptance gates determine readiness; a missed gat
 - [x] The required database/runtime works on the local testbed despite the initially unavailable Docker daemon; any infrastructure dependency has an identified owner.
 - [x] All exercised paths add no service cost, and paid provider routes are disabled by default.
 - [x] Migrations work on a clean database and preserve existing run data when applied again.
-- [ ] Authentication/access configuration is appropriate to the documented private deployment boundary; exposed endpoints do not rely on a demo identity.
-- [ ] Environment examples contain placeholders, and logs do not print provider secrets.
+- [x] Authentication/access configuration is appropriate to the documented private deployment boundary; exposed endpoints do not rely on a demo identity.
+- [x] Environment examples contain placeholders, and logs do not print provider secrets.
 
 ### Execution and authority
 
-- [ ] A generic versioned workflow creates a persistent run with correlated steps and events.
+- [x] A pinned founder-release workflow creates a persistent run with correlated steps and events; arbitrary workflow graphs remain deferred.
 - [x] Shared contracts use the canonical states `queued`, `running`, `waiting_approval`, `completed`, `failed`, and `cancelled` consistently across clients and runtime.
 - [x] Sandbox plans and artifacts are visibly identified as local simulation.
-- [ ] A run can wait for approval, resume, fail, be rejected, and be cancelled with clear state.
+- [x] A run can wait for approval, resume, fail, be rejected, and be cancelled with clear state.
 - [x] Approval binds to a specific payload revision, actor, and intended action.
-- [ ] Replays and worker restarts do not create duplicate outbox items.
+- [x] Replays and worker restarts do not create duplicate outbox items.
 - [x] Retries are bounded, and non-retryable failures have actionable messages.
 - [x] No default workflow performs external sends, spend, privileged host execution, or production deployment.
 
 ### Providers and knowledge
 
-- [ ] Each of Ollama, OpenAI, and Claude has an implemented adapter contract and documented configuration.
+- [x] Each of Ollama, OpenAI, and Claude has an implemented adapter contract and documented configuration.
 - [x] Real Ollama compatibility is verified; OpenAI/Claude are separately marked verified, unavailable, or unverified without assuming subscription API access.
 - [x] Routing records its reason and fails closed when local-only or other hard policy cannot be met.
-- [ ] Retrieval filters sources by the applicable workspace/access scope.
-- [ ] A founder release package cites real retrieved passages, handles insufficient evidence visibly, and does not invent test/deployment results.
-- [ ] Updated/deleted sources no longer produce stale active retrieval results.
-- [ ] Durable memory is explicit, scoped, inspectable, and deletable; raw conversations are not silently promoted into memory.
+- [x] Retrieval filters sources by the applicable workspace/access scope.
+- [x] A founder release package cites real retrieved passages, handles insufficient evidence visibly, and does not invent test/deployment results.
+- [x] Missions require latest ready revisions; deleted sources cannot enter new retrieval and retained prior search revisions are explicit.
+- [x] Durable memory is explicit, scoped, inspectable, and deletable; raw conversations are not silently promoted into memory.
 
 ### Client and operational readiness
 
-- [ ] Web completes the golden workflow and shows empty, waiting, failed, rejected, and completed states.
-- [ ] A real Ollama run produces a concrete downloadable/inspectable plan, acceptance checklist, release notes, risks, and deployment handoff package.
-- [ ] The iOS companion has a documented build result and feature matrix; a preview or web shell is not presented as a successful native build.
+- [x] Web completes the golden workflow and shows empty, waiting, failed, rejected, and completed states.
+- [x] A real Ollama run produces a concrete downloadable/inspectable plan, acceptance checklist, release notes, risks, and deployment handoff package.
+- [x] The iOS companion has a documented build result and feature matrix; a preview or web shell is not presented as a successful native build.
 - [x] Run status and action results survive a backend/worker restart.
-- [ ] A documented backup/restore rehearsal succeeds in a separate test database.
-- [ ] The quickstart and release notes state real limitations and verified test results.
+- [x] A documented backup/restore rehearsal succeeds in a separate test database.
+- [x] The quickstart and release notes state real limitations and verified test results.
 
-An unchecked mandatory gate means the result remains an incomplete alpha. A good-looking interface alone cannot satisfy it.
+These checks establish the documented local alpha foundation. Target-environment deployment, editorial/model quality, physical-device distribution and public SaaS remain separate release boundaries in STATUS.md; passing a fixture is never evidence of a completed external action.
 
 ## Testing strategy
 
 Tests should protect actual product risks rather than reproduce implementation details.
 
-| Layer | Purpose | Minimum useful coverage |
-| --- | --- | --- |
-| Domain and policy tests | Prevent unauthorized or inconsistent state transitions | Approval invalidation, rejection, cancellation, local-only routing, retry eligibility |
-| Adapter contract tests | Keep provider behavior consistent | Normalized content/usage, unsupported capability, invalid configuration, timeout, retryable/non-retryable errors |
-| Database/worker integration tests | Prove persistence and safe replay | Waiting-run restart, unique action identity, duplicate job delivery, migration and restore |
-| Retrieval evaluation fixtures | Check groundedness and lifecycle | Expected source selection, real citation provenance, insufficient evidence, deletion and access filtering |
-| One golden end-to-end flow | Prove user value across boundaries | Connect local Ollama → ingest product knowledge → change brief → plan/release artifacts with evidence → approve → local package/outbox |
-| Focused failure flows | Prove honest and safe degradation | Provider unavailable, route blocked, failed ingestion, rejected/stale approval |
-| Native/client smoke check | Verify actual client delivery | iOS build/start/auth/run detail/approval and responsive web keyboard operation |
+| Layer                             | Purpose                                                | Minimum useful coverage                                                                                                                |
+| --------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Domain and policy tests           | Prevent unauthorized or inconsistent state transitions | Approval invalidation, rejection, cancellation, local-only routing, retry eligibility                                                  |
+| Adapter contract tests            | Keep provider behavior consistent                      | Normalized content/usage, unsupported capability, invalid configuration, timeout, retryable/non-retryable errors                       |
+| Database/worker integration tests | Prove persistence and safe replay                      | Waiting-run restart, unique action identity, duplicate job delivery, migration and restore                                             |
+| Retrieval evaluation fixtures     | Check groundedness and lifecycle                       | Expected source selection, real citation provenance, insufficient evidence, deletion and access filtering                              |
+| One golden end-to-end flow        | Prove user value across boundaries                     | Connect local Ollama → ingest product knowledge → change brief → plan/release artifacts with evidence → approve → local package/outbox |
+| Focused failure flows             | Prove honest and safe degradation                      | Provider unavailable, route blocked, failed ingestion, rejected/stale approval                                                         |
+| Native/client smoke check         | Verify actual client delivery                          | iOS build/start/auth/run detail/approval and responsive web keyboard operation                                                         |
 
 Unit and contract checks use fixtures without secrets. A successful mock test is not evidence of live-provider support. Real Ollama inference is required for the complete alpha; other live smoke tests require verified existing zero-cost eligibility. Tests that cause external send, spend, or system change require the corresponding authorization. An existing GPT subscription is not evidence of API entitlement.
 
@@ -188,14 +188,14 @@ The product goal is extensive automation. The release process must continue to d
 
 ## Confirmed decisions and remaining inputs
 
-| Decision/input | Confirmed position or outstanding input | Effect on delivery |
-| --- | --- | --- |
-| First buyer and highest-value workflow | Confirmed: SaaS founder; build → operate → market → sell. First mission is founder release readiness. | Workflow copy, data fixtures, artifacts, and priority modules |
-| Definition of success in one week | Confirmed: polished deployable alpha with one reliable end-to-end flow. | Real Ollama inference plus concrete approved local output, packaging, and release evidence |
-| Models, machine, hosting, and budget | Confirmed: existing hardware, local testbed, zero extra cost. MacBook M5 + local Ollama now; CPU-only existing infrastructure later. Model downloads are allowed. Verify models and any eligible API access. | Runtime prerequisites, Ollama model selection, infrastructure issue, and provider gating |
-| License/commercial constraints | Full code open source; license undecided | Repository license, distribution terms, and hosted-service positioning |
-| Infrastructure request repository | Confirmed: `XeoNote/Infrastructure-`; existing staff manage resources and Cloudflare DNS for `vuzmi.com`. | Draft remains local until a concrete destination and authorized request are available |
-| First external integration | Local change brief and artifact outbox; later integration undecided | Connector implementation and authorization tests |
-| iOS distribution expectation | Expo companion with local tooling; no paid build/App Store plan assumed | Actual local build availability and companion scope |
+| Decision/input                         | Confirmed position or outstanding input                                                                                                                                                                      | Effect on delivery                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| First buyer and highest-value workflow | Confirmed: SaaS founder; build → operate → market → sell. First mission is founder release readiness.                                                                                                        | Workflow copy, data fixtures, artifacts, and priority modules                              |
+| Definition of success in one week      | Confirmed: polished deployable alpha with one reliable end-to-end flow.                                                                                                                                      | Real Ollama inference plus concrete approved local output, packaging, and release evidence |
+| Models, machine, hosting, and budget   | Confirmed: existing hardware, local testbed, zero extra cost. MacBook M5 + local Ollama now; CPU-only existing infrastructure later. Model downloads are allowed. Verify models and any eligible API access. | Runtime prerequisites, Ollama model selection, infrastructure issue, and provider gating   |
+| License/commercial constraints         | Full code open source; AGPL-3.0-only selected                                                                                                                                                                | Repository license, distribution terms, and hosted-service positioning                     |
+| Infrastructure request repository      | Confirmed: `XeoNote/Infrastructure-`; existing staff manage resources and Cloudflare DNS for `vuzmi.com`.                                                                                                    | Draft remains local until a concrete destination and authorized request are available      |
+| First external integration             | Local change brief and artifact outbox; later integration undecided                                                                                                                                          | Connector implementation and authorization tests                                           |
+| iOS distribution expectation           | Expo companion with local tooling; no paid build/App Store plan assumed                                                                                                                                      | Actual local build availability and companion scope                                        |
 
 Revise the plan as remaining inputs arrive. The founder mission, zero-added-cost constraint, trust boundaries, and truthful reporting remain requirements.

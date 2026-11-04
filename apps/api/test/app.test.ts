@@ -338,3 +338,41 @@ test("a failed disk write does not publish completion or poison later mutations"
   assert.equal(retried.statusCode, 200);
   assert.equal(retried.json().run.status, "completed");
 });
+
+test("self-host serves only the built client root and minimal dependency health", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "vuzmi-web-root-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const webRoot = join(directory, "public");
+  await mkdir(webRoot);
+  await writeFile(
+    join(webRoot, "index.html"),
+    "<title>Vuzmi build fixture</title>",
+  );
+  await writeFile(
+    join(directory, "private-key.txt"),
+    "fixture-private-do-not-serve",
+  );
+  await writeFile(join(webRoot, ".secret"), "fixture-private-dotfile");
+  const app = await buildApp({ dataDir: join(directory, "state"), webRoot });
+  t.after(() => app.close());
+  const page = await app.inject({ method: "GET", url: "/" });
+  assert.equal(page.statusCode, 200);
+  assert.match(page.body, /Vuzmi build fixture/);
+  for (const url of [
+    "/private-key.txt",
+    "/.secret",
+    "/%2e%2e/private-key.txt",
+    "/node_modules/pg/package.json",
+  ]) {
+    const response = await app.inject({ method: "GET", url });
+    assert.notEqual(response.statusCode, 200);
+    assert.doesNotMatch(response.body, /fixture-private/);
+  }
+  assert.deepEqual(
+    (await app.inject({ method: "GET", url: "/healthz" })).json(),
+    { status: "ok" },
+  );
+  const readiness = await app.inject({ method: "GET", url: "/readyz" });
+  assert.equal(readiness.statusCode, 503);
+  assert.deepEqual(readiness.json(), { status: "not_ready" });
+});

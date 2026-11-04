@@ -4,6 +4,7 @@ import { Pool } from "pg";
 import type { PoolClient } from "pg";
 import {
   claimGeneration,
+  attachEvidence,
   completeGeneration,
   createQueuedRun,
   createRunSchema,
@@ -14,6 +15,12 @@ import {
   parseRunIntegrity,
 } from "@vuzmi/core";
 import type { CreateRunInput, DecisionInput, Run, Usage } from "@vuzmi/core";
+import {
+  INDEX_QUEUE,
+  KnowledgeRepository,
+  knowledgeMigration,
+} from "./knowledge.js";
+import type { KnowledgeEmbedder } from "./knowledge.js";
 
 export const GENERATION_QUEUE = "vuzmi-generate-release";
 export const GENERATION_RETRY_LIMIT = 2;
@@ -41,6 +48,7 @@ export interface CompleteContext {
   expectedRevision: number;
   content: string;
   usage: Usage;
+  signal?: AbortSignal;
 }
 export interface FailContext {
   attemptId: string;
@@ -67,12 +75,15 @@ function identifier(value: string): string {
 async function transaction<T>(
   pool: Pool,
   operation: (client: PoolClient) => Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> {
   const client = await pool.connect();
   try {
+    signal?.throwIfAborted();
     await client.query("BEGIN");
     await client.query("SET LOCAL lock_timeout = '5s'");
     const result = await operation(client);
+    signal?.throwIfAborted();
     await client.query("COMMIT");
     return result;
   } catch (error) {
@@ -139,23 +150,28 @@ async function migrate(pool: Pool, schemaName: string): Promise<void> {
     await client.query(`CREATE TABLE IF NOT EXISTS ${schema}.schema_migrations (
       version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now()
     )`);
-    const existing = await client.query<{ checksum: string }>(
-      `SELECT checksum FROM ${schema}.schema_migrations WHERE version = $1`,
-      [1],
-    );
-    const checksum = sha256(migration);
-    if (existing.rows[0]) {
-      if (existing.rows[0].checksum !== checksum)
-        throw new Error(
-          "Runtime migration checksum mismatch. Refusing to change the database.",
-        );
-      return;
+    for (const item of [
+      { version: 1, sql: migration },
+      { version: 2, sql: knowledgeMigration(schema) },
+    ]) {
+      const existing = await client.query<{ checksum: string }>(
+        `SELECT checksum FROM ${schema}.schema_migrations WHERE version=$1`,
+        [item.version],
+      );
+      const checksum = sha256(item.sql);
+      if (existing.rows[0]) {
+        if (existing.rows[0].checksum !== checksum)
+          throw new Error(
+            "Runtime migration checksum mismatch. Refusing to change the database.",
+          );
+        continue;
+      }
+      await client.query(item.sql);
+      await client.query(
+        `INSERT INTO ${schema}.schema_migrations(version,checksum) VALUES($1,$2)`,
+        [item.version, checksum],
+      );
     }
-    await client.query(migration);
-    await client.query(
-      `INSERT INTO ${schema}.schema_migrations(version, checksum) VALUES ($1, $2)`,
-      [1, checksum],
-    );
   });
 }
 
@@ -163,6 +179,7 @@ async function migrate(pool: Pool, schemaName: string): Promise<void> {
 export class PostgresRunRepository {
   readonly schema: string;
   readonly queueSchema: string;
+  readonly knowledge: KnowledgeRepository;
   private closed = false;
 
   private constructor(
@@ -174,6 +191,14 @@ export class PostgresRunRepository {
   ) {
     this.schema = identifier(schema);
     this.queueSchema = identifier(queueSchema);
+    this.knowledge = new KnowledgeRepository({
+      pool,
+      boss,
+      schema: this.schema,
+      queueSchema: this.queueSchema,
+      transaction: (operation, signal) => transaction(pool, operation, signal),
+      now,
+    });
   }
 
   static async connect(
@@ -207,6 +232,14 @@ export class PostgresRunRepository {
       await boss.createQueue(GENERATION_QUEUE, {
         policy: "singleton",
         retryLimit: GENERATION_RETRY_LIMIT,
+        retryDelay: 5,
+        retryBackoff: true,
+        expireInSeconds: 300,
+        heartbeatSeconds: 10,
+      });
+      await boss.createQueue(INDEX_QUEUE, {
+        policy: "singleton",
+        retryLimit: 2,
         retryDelay: 5,
         retryBackoff: true,
         expireInSeconds: 300,
@@ -267,6 +300,9 @@ export class PostgresRunRepository {
           });
     parseRunIntegrity(run, sha256);
     await transaction(this.pool, async (client) => {
+      const pins = parsed.knowledge
+        ? await this.knowledge.pinSelection(client, parsed.knowledge)
+        : undefined;
       await client.query(
         `INSERT INTO ${this.schema}.runs
         (workspace_id, id, revision, status, aggregate, created_at, updated_at) VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7)`,
@@ -281,6 +317,7 @@ export class PostgresRunRepository {
         ],
       );
       await this.appendEffects(client, undefined, run);
+      if (pins) await this.knowledge.savePins(client, run.id, pins);
       if (run.mode === "ollama") {
         const data: GenerationJobData = {
           workspaceId: run.workspaceId,
@@ -307,9 +344,10 @@ export class PostgresRunRepository {
     workspaceId: string,
     id: string,
     input: DecisionInput,
+    actor?: { id: string; name: string },
   ): Promise<Run> {
     const result = await this.change(workspaceId, id, (run) =>
-      decideRun(run, input, this.now().toISOString()),
+      decideRun(run, input, this.now().toISOString(), actor),
     );
     if (!result) throw new RunNotFoundError();
     return result;
@@ -335,13 +373,58 @@ export class PostgresRunRepository {
     id: string,
     context: CompleteContext,
   ): Promise<Run | undefined> {
-    return this.change(workspaceId, id, (run) =>
-      completeGeneration(run, {
-        ...context,
-        now: this.now().toISOString(),
-        fingerprint: sha256,
-      }),
+    return this.change(
+      workspaceId,
+      id,
+      async (run, client) => {
+        const next = completeGeneration(run, {
+          ...context,
+          now: this.now().toISOString(),
+          fingerprint: sha256,
+        });
+        if (next?.knowledge)
+          await this.knowledge.assertRunPins(workspaceId, id, client);
+        return next;
+      },
+      context.signal,
     );
+  }
+
+  async prepareEvidence(
+    workspaceId: string,
+    id: string,
+    context: { attemptId: string; expectedRevision: number },
+    embed: KnowledgeEmbedder,
+    signal?: AbortSignal,
+  ): Promise<Run | undefined> {
+    const current = await this.get(workspaceId, id);
+    if (
+      !current ||
+      current.status !== "running" ||
+      current.attemptId !== context.attemptId ||
+      current.revision !== context.expectedRevision
+    )
+      return undefined;
+    if (!current.knowledge) return current;
+    const pins = await this.knowledge.runPins(workspaceId, id);
+    if (!pins) throw new Error("Required evidence pins are missing.");
+    const evidence =
+      current.evidence ??
+      (await this.knowledge.searchPinned(
+        pins,
+        `${current.title}\n${current.brief}`.slice(0, 1000),
+        embed,
+        signal,
+      ));
+    signal?.throwIfAborted();
+    return this.change(workspaceId, id, async (run, client) => {
+      await this.knowledge.assertRunPins(workspaceId, id, client);
+      return attachEvidence(run, {
+        ...context,
+        evidence,
+        now: this.now().toISOString(),
+      });
+    });
   }
 
   async fail(
@@ -411,6 +494,41 @@ export class PostgresRunRepository {
         });
       });
     }
+    const orphans = await this.pool.query<{ workspace_id: string; id: string }>(
+      `SELECT run.workspace_id,run.id FROM ${this.schema}.runs AS run
+       WHERE run.status IN ('queued','running') AND run.updated_at < now() - interval '10 minutes'
+       AND NOT EXISTS (SELECT 1 FROM ${this.queueSchema}.job AS job WHERE job.name=$1
+         AND job.data->>'workspaceId'=run.workspace_id AND job.data->>'runId'=run.id
+         AND job.state IN ('created','retry','active')) LIMIT 50`,
+      [GENERATION_QUEUE],
+    );
+    for (const row of orphans.rows) {
+      if (row.workspace_id !== "local-workspace") continue;
+      await this.change(row.workspace_id, row.id, async (run, client) => {
+        if (!["queued", "running"].includes(run.status)) return undefined;
+        // Recheck age and queue state after locking the run; a delayed sweep
+        // must not fail newly active work observed by an earlier candidate read.
+        const stale = await client.query(
+          `SELECT 1 FROM ${this.schema}.runs AS run WHERE run.workspace_id=$1 AND run.id=$2
+           AND run.updated_at < now() - interval '10 minutes'
+           AND NOT EXISTS (SELECT 1 FROM ${this.queueSchema}.job AS job WHERE job.name=$3
+             AND job.data->>'workspaceId'=run.workspace_id AND job.data->>'runId'=run.id
+             AND job.state IN ('created','retry','active'))`,
+          [row.workspace_id, row.id, GENERATION_QUEUE],
+        );
+        if (!stale.rowCount) return undefined;
+        return exhaustGeneration(run, {
+          now: this.now().toISOString(),
+          error: {
+            code: "QUEUE_JOB_UNAVAILABLE",
+            message:
+              "No live generation job remains for this interrupted run. Start a new mission after review; no automatic inference was started.",
+            retryable: false,
+          },
+        });
+      });
+    }
+    await this.knowledge.reconcileExhausted();
   }
 
   async close(): Promise<void> {
@@ -426,40 +544,50 @@ export class PostgresRunRepository {
   private async change(
     workspaceId: string,
     id: string,
-    update: (run: Run) => Run | undefined,
+    update: (
+      run: Run,
+      client: PoolClient,
+    ) => Run | undefined | Promise<Run | undefined>,
+    signal?: AbortSignal,
   ): Promise<Run | undefined> {
-    return transaction(this.pool, async (client) => {
-      const result = await client.query<{ aggregate: unknown }>(
-        `SELECT aggregate FROM ${this.schema}.runs WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
-        [workspaceId, id],
-      );
-      if (!result.rows[0]) return undefined;
-      const current = parseRunIntegrity(result.rows[0].aggregate, sha256);
-      const next = update(current);
-      if (!next) return undefined;
-      if (next === current) return current;
-      parseRunIntegrity(next, sha256);
-      const saved = await client.query(
-        `UPDATE ${this.schema}.runs
+    return transaction(
+      this.pool,
+      async (client) => {
+        const result = await client.query<{ aggregate: unknown }>(
+          `SELECT aggregate FROM ${this.schema}.runs WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
+          [workspaceId, id],
+        );
+        signal?.throwIfAborted();
+        if (!result.rows[0]) return undefined;
+        const current = parseRunIntegrity(result.rows[0].aggregate, sha256);
+        const next = await update(current, client);
+        signal?.throwIfAborted();
+        if (!next) return undefined;
+        if (next === current) return current;
+        parseRunIntegrity(next, sha256);
+        const saved = await client.query(
+          `UPDATE ${this.schema}.runs
         SET revision = $3, status = $4, aggregate = $5::jsonb, updated_at = $6
         WHERE workspace_id = $1 AND id = $2 AND revision = $7`,
-        [
-          workspaceId,
-          id,
-          next.revision,
-          next.status,
-          JSON.stringify(next),
-          next.updatedAt,
-          current.revision,
-        ],
-      );
-      if (saved.rowCount !== 1)
-        throw new Error(
-          "The run changed before the transition could be saved.",
+          [
+            workspaceId,
+            id,
+            next.revision,
+            next.status,
+            JSON.stringify(next),
+            next.updatedAt,
+            current.revision,
+          ],
         );
-      await this.appendEffects(client, current, next);
-      return next;
-    });
+        if (saved.rowCount !== 1)
+          throw new Error(
+            "The run changed before the transition could be saved.",
+          );
+        await this.appendEffects(client, current, next);
+        return next;
+      },
+      signal,
+    );
   }
 
   private async appendEffects(

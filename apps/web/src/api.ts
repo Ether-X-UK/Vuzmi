@@ -23,7 +23,10 @@ export async function getRuntime(): Promise<RuntimeInfo> {
   return runtimeInfoSchema.parse(await request("/runtime"));
 }
 
-async function request(path: string, init?: RequestInit): Promise<unknown> {
+export async function request(
+  path: string,
+  init?: RequestInit,
+): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(`/v1${path}`, {
@@ -51,6 +54,8 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
     );
   }
   if (!response.ok) {
+    if (response.status === 401)
+      window.dispatchEvent(new Event("vuzmi:session-expired"));
     const error = (body as { error?: { message?: string; code?: string } })
       ?.error;
     throw new ApiError(

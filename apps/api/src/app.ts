@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
+import fastifyStatic from "@fastify/static";
 import type { FastifyInstance } from "fastify";
+import { AuthError, type AuthService } from "@vuzmi/auth";
 import {
   createRunSchema,
   createSimulationRun,
@@ -9,10 +11,28 @@ import {
   decideRun,
   DomainError,
 } from "@vuzmi/core";
-import type { Run, RuntimeInfo, WorkspaceSnapshot } from "@vuzmi/core";
-import { listLocalModels, ProviderError } from "@vuzmi/providers";
-import { PostgresRunRepository, RunNotFoundError } from "@vuzmi/runtime";
+import type {
+  Run,
+  RuntimeInfo,
+  SafeOwner,
+  WorkspaceSnapshot,
+} from "@vuzmi/core";
+import {
+  discoverEmbeddingProfile,
+  listLocalModels,
+  ProviderError,
+} from "@vuzmi/providers";
+import {
+  KnowledgeError,
+  PostgresRunRepository,
+  RunNotFoundError,
+} from "@vuzmi/runtime";
+import type { KnowledgeEmbedder } from "@vuzmi/runtime";
 import { LocalStateStore } from "./store.js";
+import { HttpError } from "./errors.js";
+import { registerKnowledgeRoutes } from "./knowledge.js";
+import { registerOutboxRoutes } from "./outbox.js";
+import { registerSourceRoutes } from "./source.js";
 
 export interface AppOptions {
   dataDir?: string;
@@ -20,17 +40,15 @@ export interface AppOptions {
   databaseUrl?: string;
   ollamaBaseUrl?: string;
   ollamaModel?: string;
+  ollamaEmbeddingModel?: string;
+  databaseSchema?: string;
+  queueSchema?: string;
+  discoverProfile?: typeof discoverEmbeddingProfile;
+  embedKnowledge?: KnowledgeEmbedder;
   discoverModels?: typeof listLocalModels;
-}
-
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
+  auth?: AuthService;
+  authBaseUrl?: string;
+  webRoot?: string;
 }
 
 const allowedHost = /^(localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/i;
@@ -58,6 +76,8 @@ export async function buildApp(
   const repository = options.databaseUrl
     ? await PostgresRunRepository.connect({
         connectionString: options.databaseUrl,
+        schema: options.databaseSchema,
+        queueSchema: options.queueSchema,
         now: options.now,
       })
     : undefined;
@@ -110,6 +130,40 @@ export async function buildApp(
     bodyLimit: 32 * 1024,
     trustProxy: false,
   });
+  const owners = new WeakMap<object, SafeOwner>();
+  const trustedOrigins = new Set(allowedOrigins);
+  if (options.auth) {
+    trustedOrigins.add(
+      new URL(options.authBaseUrl ?? "http://127.0.0.1:5173").origin,
+    );
+    trustedOrigins.add("vuzmi://");
+  }
+  const webHeaders = (
+    headers: Record<string, string | string[] | undefined>,
+  ): Headers => {
+    const result = new Headers();
+    for (const [key, value] of Object.entries(headers)) {
+      if (value !== undefined)
+        result.set(key, Array.isArray(value) ? value.join(", ") : value);
+    }
+    return result;
+  };
+  const authHeaders = (request: {
+    headers: Record<string, string | string[] | undefined>;
+    ip: string;
+  }): Headers => {
+    const headers = webHeaders(request.headers);
+    for (const name of [
+      "forwarded",
+      "x-forwarded-for",
+      "x-real-ip",
+      "cf-connecting-ip",
+      "true-client-ip",
+    ])
+      headers.delete(name);
+    headers.set("x-forwarded-for", request.ip);
+    return headers;
+  };
 
   app.addHook("onRequest", async (request, reply) => {
     if (!allowedHost.test(request.headers.host ?? "")) {
@@ -121,7 +175,7 @@ export async function buildApp(
       });
     }
     const origin = request.headers.origin;
-    if (origin !== undefined && !allowedOrigins.has(origin)) {
+    if (origin !== undefined && !trustedOrigins.has(origin)) {
       return reply.code(403).send({
         error: {
           code: "ORIGIN_NOT_ALLOWED",
@@ -132,9 +186,45 @@ export async function buildApp(
     }
     reply.header("Cache-Control", "no-store");
     reply.header("X-Content-Type-Options", "nosniff");
+    // Use the matched route, not attacker-controlled URL spelling. Fastify can
+    // match percent-encoded static segments to the same business handler.
+    const path = request.routeOptions.url ?? "";
+    if (
+      options.auth &&
+      path.startsWith("/v1/") &&
+      path !== "/v1/auth/state" &&
+      path !== "/v1/auth/setup"
+    ) {
+      const owner = await options.auth.session(authHeaders(request));
+      if (!owner)
+        throw new HttpError(
+          401,
+          "SESSION_REQUIRED",
+          "Sign in to access this workspace.",
+        );
+      owners.set(request, owner);
+      if (
+        !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
+        (!origin || !trustedOrigins.has(origin))
+      ) {
+        throw new HttpError(
+          403,
+          "ORIGIN_REQUIRED",
+          "Workspace changes require a trusted browser or Vuzmi app origin.",
+        );
+      }
+    }
   });
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof AuthError)
+      return reply
+        .code(error.statusCode)
+        .send({ error: { code: error.code, message: error.message } });
+    if (error instanceof KnowledgeError)
+      return reply
+        .code(error.statusCode)
+        .send({ error: { code: error.code, message: error.message } });
     if (error instanceof RunNotFoundError)
       return reply
         .code(404)
@@ -183,6 +273,87 @@ export async function buildApp(
     });
   });
 
+  app.get("/healthz", async () => ({ status: "ok" }));
+  registerSourceRoutes(app);
+  app.get("/readyz", async (_request, reply) => {
+    try {
+      const worker = repository ? await repository.workerHealth() : undefined;
+      const ready = Boolean(
+        repository && worker?.state === "ready" && options.auth,
+      );
+      return reply
+        .code(ready ? 200 : 503)
+        .send({ status: ready ? "ready" : "not_ready" });
+    } catch {
+      return reply.code(503).send({ status: "not_ready" });
+    }
+  });
+  if (options.webRoot)
+    await app.register(fastifyStatic, {
+      root: options.webRoot,
+      dotfiles: "deny",
+      cacheControl: false,
+      index: "index.html",
+    });
+
+  app.get("/v1/auth/state", async (request) =>
+    options.auth
+      ? options.auth.state(authHeaders(request))
+      : { mode: "development", setupNeeded: false, user: null },
+  );
+  app.post("/v1/auth/setup", async (request, reply) => {
+    if (!options.auth)
+      throw new HttpError(
+        409,
+        "AUTH_DEVELOPMENT_MODE",
+        "Owner setup is unavailable in explicit development mode.",
+      );
+    if (
+      request.headers.origin !==
+      new URL(options.authBaseUrl ?? "http://127.0.0.1:5173").origin
+    ) {
+      throw new HttpError(
+        403,
+        "ORIGIN_REQUIRED",
+        "Complete owner setup from the local web client.",
+      );
+    }
+    const user = await options.auth.setupOwner(
+      request.body as Parameters<AuthService["setupOwner"]>[0],
+    );
+    return reply.code(201).send({ user });
+  });
+  app.route({
+    method: ["GET", "POST"],
+    url: "/api/auth/*",
+    handler: async (request, reply) => {
+      if (!options.auth)
+        throw new HttpError(
+          409,
+          "AUTH_DEVELOPMENT_MODE",
+          "Authentication is unavailable in explicit development mode.",
+        );
+      const headers = authHeaders(request);
+      const body =
+        request.body === undefined ? undefined : JSON.stringify(request.body);
+      if (body !== undefined) {
+        headers.set("Content-Type", "application/json");
+        headers.delete("content-length");
+      }
+      const response = await options.auth.handler(
+        new Request(
+          new URL(request.url, options.authBaseUrl ?? "http://127.0.0.1:5173"),
+          { method: request.method, headers, body },
+        ),
+      );
+      for (const [name, value] of response.headers)
+        if (name !== "set-cookie") reply.header(name, value);
+      const cookies = response.headers.getSetCookie();
+      if (cookies.length) reply.header("Set-Cookie", cookies);
+      return reply.code(response.status).send(await response.text());
+    },
+  });
+
   app.get(
     "/v1/workspace",
     async (): Promise<WorkspaceSnapshot> => ({
@@ -198,6 +369,14 @@ export async function buildApp(
   );
 
   app.get("/v1/runtime", runtime);
+  registerOutboxRoutes(app, { listRuns, getRun });
+  registerKnowledgeRoutes(app, {
+    repository,
+    ollamaBaseUrl: options.ollamaBaseUrl,
+    ollamaEmbeddingModel: options.ollamaEmbeddingModel,
+    discoverProfile: options.discoverProfile,
+    embed: options.embedKnowledge,
+  });
   app.get("/v1/runs", async () => ({ runs: await listRuns() }));
 
   app.post("/v1/runs", async (request, reply) => {
@@ -284,11 +463,17 @@ export async function buildApp(
             "local-workspace",
             request.params.id,
             input.data,
+            owners.get(request),
           ),
         };
       const run = await store!.mutate((state) => {
         const current = findRun(state.runs, request.params.id);
-        const decided = decideRun(current, input.data, now().toISOString());
+        const decided = decideRun(
+          current,
+          input.data,
+          now().toISOString(),
+          owners.get(request),
+        );
         return {
           state: {
             ...state,
@@ -306,6 +491,7 @@ export async function buildApp(
   app.addHook("onClose", async () => {
     if (repository) await repository.close();
     else await store!.idle();
+    await options.auth?.close();
   });
   await app.ready();
   return app;

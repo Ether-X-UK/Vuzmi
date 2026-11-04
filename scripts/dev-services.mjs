@@ -124,6 +124,23 @@ export function startPostgres(stateDir, port) {
   );
   if (databaseExists !== "1")
     run("createdb", ["-O", "vuzmi", "vuzmi"], { env, quiet: true });
+  try {
+    run(
+      "psql",
+      [
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public",
+      ],
+      { env: { ...env, PGDATABASE: "vuzmi" }, quiet: true },
+    );
+  } catch {
+    throw new Error(
+      "The local database needs pgvector installed for its PostgreSQL major version. See docs/DEVELOPMENT.md for native setup; no database data was removed.",
+    );
+  }
   return `postgresql://vuzmi:${credentials.application}@127.0.0.1:${port}/vuzmi`;
 }
 
@@ -237,6 +254,18 @@ if (
     } else {
       privateDirectory(join(root, ".data"));
       const databaseUrl = startPostgres(devDir, 55432);
+      for (const name of ["auth-secret", "owner-setup-key"]) {
+        const path = join(devDir, name);
+        if (!existsSync(path))
+          writeFileSync(path, randomBytes(48).toString("base64url"), {
+            mode: 0o600,
+            flag: "wx",
+          });
+        if ((statSync(path).mode & 0o077) !== 0)
+          throw new Error(
+            "Local authentication files must have permissions 0600.",
+          );
+      }
       writeFileSync(
         join(devDir, "database.env"),
         `DATABASE_URL=${databaseUrl}\n`,

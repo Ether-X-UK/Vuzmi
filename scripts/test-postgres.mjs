@@ -22,6 +22,18 @@ try {
   const tests = (await readdir(testDir))
     .filter((name) => name.endsWith(".test.ts"))
     .map((name) => join(testDir, name));
+  const apiTestDir = join(root, "apps/api/test");
+  tests.push(
+    ...(await readdir(apiTestDir))
+      .filter((name) => name.endsWith(".postgres.ts"))
+      .map((name) => join(apiTestDir, name)),
+  );
+  const authTestDir = join(root, "packages/auth/test");
+  tests.push(
+    ...(await readdir(authTestDir))
+      .filter((name) => name.endsWith(".test.ts"))
+      .map((name) => join(authTestDir, name)),
+  );
   if (!tests.length)
     throw new Error("No PostgreSQL integration tests were found.");
   const child = spawn(

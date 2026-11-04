@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { Domain, Usage } from "@vuzmi/core";
+import type { Domain, Usage, Run, EvidenceSnapshot } from "@vuzmi/core";
+import { INDEX_QUEUE, KnowledgeError } from "./knowledge.js";
+import type { IndexJobData, KnowledgeEmbedder } from "./knowledge.js";
+import { processIndexJob } from "./index-worker.js";
 import { GENERATION_QUEUE, GENERATION_RETRY_LIMIT } from "./repository.js";
 import type { GenerationJobData, PostgresRunRepository } from "./repository.js";
 
@@ -9,11 +12,13 @@ export type ReleaseGenerator = (input: {
   brief: string;
   domain: Domain;
   signal?: AbortSignal;
+  evidence?: EvidenceSnapshot;
 }) => Promise<{ content: string; usage: Usage }>;
 
 export interface WorkerOptions {
   repository: PostgresRunRepository;
   generate: ReleaseGenerator;
+  embed?: KnowledgeEmbedder;
   onError?: (error: Error) => void;
 }
 
@@ -68,12 +73,13 @@ export async function processRunJob(
     throw new Error("Invalid local generation job payload.");
   }
   if (signal?.aborted) return;
-  const run = await repository.claim(data.workspaceId, data.runId, {
+  const claimed = await repository.claim(data.workspaceId, data.runId, {
     attemptId: randomUUID(),
     allowRecovery: job.retryCount > 0,
     model: data.model,
   });
-  if (!run) return;
+  if (!claimed) return;
+  let run: Run = claimed;
   const cancellation = (): {
     code: string;
     message: string;
@@ -95,15 +101,19 @@ export async function processRunJob(
   let abortedAttempt:
     | Promise<Awaited<ReturnType<PostgresRunRepository["fail"]>>>
     | undefined;
+  let abortedRevision: number | undefined;
   const fenceAbortedAttempt = (): Promise<
     Awaited<ReturnType<PostgresRunRepository["fail"]>>
   > => {
-    abortedAttempt ??= repository.fail(data.workspaceId, data.runId, {
-      attemptId: run.attemptId!,
-      expectedRevision: run.revision,
-      error: cancellation(),
-      willRetry: job.retryCount < GENERATION_RETRY_LIMIT,
-    });
+    if (!abortedAttempt || abortedRevision !== run.revision) {
+      abortedRevision = run.revision;
+      abortedAttempt = repository.fail(data.workspaceId, data.runId, {
+        attemptId: run.attemptId!,
+        expectedRevision: run.revision,
+        error: cancellation(),
+        willRetry: job.retryCount < GENERATION_RETRY_LIMIT,
+      });
+    }
     return abortedAttempt;
   };
   const onAbort = (): void => {
@@ -113,12 +123,36 @@ export async function processRunJob(
   signal?.addEventListener("abort", onAbort, { once: true });
   try {
     signal?.throwIfAborted();
+    if (run.knowledge) {
+      if (!options.embed)
+        throw new KnowledgeError(
+          "EMBEDDING_NOT_CONFIGURED",
+          "Required knowledge cannot be retrieved without the local embedding adapter.",
+          503,
+        );
+      const prepared = await repository.prepareEvidence(
+        data.workspaceId,
+        data.runId,
+        { attemptId: run.attemptId!, expectedRevision: run.revision },
+        options.embed,
+        signal,
+      );
+      if (!prepared) return;
+      run = prepared;
+      signal?.throwIfAborted();
+      if (run.evidence?.status !== "matched")
+        throw new KnowledgeError(
+          "INSUFFICIENT_EVIDENCE",
+          "No relevant passages were found in the selected evidence. Generation was blocked.",
+        );
+    }
     const result = await generate({
       model: data.model,
       title: run.title,
       brief: run.brief,
       domain: run.domain,
       signal,
+      evidence: run.evidence,
     });
     signal?.throwIfAborted();
     await repository.complete(data.workspaceId, data.runId, {
@@ -126,6 +160,7 @@ export async function processRunJob(
       expectedRevision: run.revision,
       content: result.content,
       usage: result.usage,
+      signal,
     });
   } catch (error) {
     const detail = signal?.aborted ? cancellation() : failure(error);
@@ -185,6 +220,31 @@ export async function startWorker(
   }, 5_000);
   timer.unref();
   try {
+    if (options.embed)
+      await repository.boss.work<IndexJobData>(
+        INDEX_QUEUE,
+        { batchSize: 1, includeMetadata: true, pollingIntervalSeconds: 1 },
+        async (jobs) => {
+          for (const job of jobs) {
+            if (stopping) throw new Error("Worker is shutting down.");
+            const controller = new AbortController();
+            controllers.add(controller);
+            const operation = processIndexJob({
+              repository,
+              embed: options.embed!,
+              job,
+              signal: controller.signal,
+            });
+            inFlight.add(operation);
+            try {
+              await operation;
+            } finally {
+              controllers.delete(controller);
+              inFlight.delete(operation);
+            }
+          }
+        },
+      );
     await repository.boss.work<GenerationJobData>(
       GENERATION_QUEUE,
       { batchSize: 1, includeMetadata: true, pollingIntervalSeconds: 1 },
@@ -220,6 +280,8 @@ export async function startWorker(
       clearInterval(timer);
       controllers.forEach((controller) => controller.abort());
       await repository.boss.offWork(GENERATION_QUEUE, { wait: true });
+      if (options.embed)
+        await repository.boss.offWork(INDEX_QUEUE, { wait: true });
       await Promise.allSettled([...inFlight]);
       await tickPromise;
       await repository.removeHeartbeat(heartbeatId);

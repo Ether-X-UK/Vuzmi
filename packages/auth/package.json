@@ -1,0 +1,17 @@
+{
+  "name": "@vuzmi/auth",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@vuzmi/core": "*",
+    "better-auth": "1.7.17",
+    "@better-auth/expo": "1.7.17",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5"
+  }
+}

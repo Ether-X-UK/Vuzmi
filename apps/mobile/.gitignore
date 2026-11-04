@@ -1,0 +1,13 @@
+node_modules/
+.expo/
+dist/
+build/
+DerivedData/
+ios/
+android/
+*.ipa
+*.xcarchive
+*.dSYM/
+*.tsbuildinfo
+*.xcuserstate
+.env*.local

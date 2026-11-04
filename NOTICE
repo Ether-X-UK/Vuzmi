@@ -1,0 +1,7 @@
+Vuzmi
+Copyright 2026 Vuzmi contributors
+
+Vuzmi's original source is licensed under AGPL-3.0-only. See LICENSE.
+Third-party dependencies, models, and tooling retain their own licences.
+No model weights, private data, credentials, or local build outputs are
+included in this source repository.

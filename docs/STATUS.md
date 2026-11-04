@@ -1,45 +1,48 @@
 # Delivery status
 
-Updated 4 November 2026. This file describes delivered code; the architecture and build plan describe the larger target. The founder accepted the initial UI direction as a starting point.
+Updated 4 November 2026. The founder accepted the initial interface direction and selected AGPL-3.0-only. This is a verified local alpha foundation, with a concrete infrastructure evaluation handoff prepared. Public SaaS and automated business execution are later milestones.
 
-## Implemented local foundation
+## Implemented
 
-- Product definition, full target architecture, seven-day build plan, primary-source research, desktop/mobile UI design, and an unposted infrastructure issue draft are recorded.
-- The TypeScript workspace contains React/Vite web, Fastify API, separate worker, shared domain rules, native Ollama transport, and PostgreSQL/pg-boss runtime packages.
-- Model control discovers eligible installed local models and reports actual database, worker, and Ollama readiness independently of saved workspace data.
-- Missions explicitly select Simulation or Local Ollama. Simulation is the default. Live requests require PostgreSQL, a ready worker, and an eligible installed model; there is no cloud or simulation fallback.
-- Local Ollama generation creates a draft with an unverified-output provenance warning. Model identity and observed usage are recorded; absent usage remains unknown. No retrieval, repository inspection, tools, code changes, deployment, or messages occur.
-- PostgreSQL persists aggregates, append-only events, decisions, and artifacts. Run creation and queue insertion share a transaction; approval commits the exact reviewed artifact atomically.
-- Attempts use revision/identity fences, bounded retries, queue and shutdown cancellation signals, worker heartbeat, and exhausted-job reconciliation. At-least-once delivery may repeat inference; stale output cannot replace the accepted draft.
-- Approval binds to the proposal's SHA-256 fingerprint and revision. Identical replay returns the existing outcome; stale or conflicting decisions fail. Rejection creates no artifact.
-- A file-backed single-process simulation remains available for UI development without PostgreSQL or Ollama. It is separate from the PostgreSQL history.
-- Local helpers own a private native PostgreSQL cluster and a dedicated cloud-disabled Ollama process. The user's existing Ollama service on 11434 is untouched.
-- The API remains loopback-only with host/origin checks. Authentication and network deployment are incomplete.
+- Architecture, product scope, seven-day delivery plan and desktop/mobile design preceded implementation. The stack is TypeScript, React/Vite web, Fastify, a separate worker, PostgreSQL 16/pgvector/pg-boss and an Expo iOS companion.
+- New missions pin founder-release workflow v1. Prepare/retrieve/draft/review/save states derive from persisted events and actual results; legacy versions remain unknown. Simulation remains visibly deterministic and does not claim a model call or executed acceptance checks.
+- Real local Ollama generation records selected model, route reason, observed usage and failure state. Local-only capability/profile checks fail closed, with no cloud or simulation fallback.
+- Plain text/Markdown sources are versioned, chunked and indexed with pinned EmbeddingGemma digest/768-dimension profile. Required source/memory selections pin revisions; insufficient evidence stops generation, and changed/deleted context fences acceptance. Retrieval preserves real excerpts, revisions, line ranges and hashes.
+- Workspace memory is explicitly curated with provenance/expiry and CRUD. Conversations are not automatically retained. Source deletion removes active text/chunks/vectors and source-linked memory; **historical run excerpts, artifacts, downloaded copies and backups remain retained**, as disclosed in the interface.
+- PostgreSQL atomically persists runs, queue admission, append-only events, exact decisions and artifacts. Retry/attempt fences, missing-job reconciliation, UTF-8 byte budgets and cancellation after row-lock waits protect persistence boundaries. At-least-once delivery can still repeat inference.
+- Owner auth uses maintained Better Auth/Expo integration and DB sessions, immutable owner-ID binding, private-key bootstrap/recovery, disabled public signup, rate limiting, cookie/origin protections and trusted IP handling. Business routes authorize against matched route metadata, including percent-encoded paths. Production startup rejects effective dotenv auth/simulation bypasses.
+- Web offers actual knowledge/memory controls, grounded missions, safe Markdown/citation rendering, exact review, authenticated actor attribution, outbox and download. Downloads preserve exact approved content, original action fingerprint, document SHA-256, workflow reference, evidence and history without dispatching anything.
+- Native iOS offers owner sign-in, SecureStore sessions, real runs/approvals, selectable exact documents/evidence and fingerprint/revision decisions. Its generated iOS/Pods/build outputs remain ignored; source generation is reproducible through Expo CNG.
+- `npm start` runs API/worker without development watchers and serves the built web root on loopback with required auth. Minimal health endpoints expose no business/owner data. Native private backup/restore and reviewed AGPL source packaging are implemented.
+- OpenAI Responses and Claude Messages text contracts have fixture coverage. Remote execution requires explicit injected transport/opt-in and is not enabled by any application route or environment toggle. Neither provider was live-tested.
 
-## Verification
+## Verification record
 
-| Check | Result |
-| --- | --- |
-| Domain/API/provider fixture tests | 39 passed, no failures or skips (`npm test`) |
-| Real PostgreSQL/pg-boss integration | 13 passed, no failures or skips (`npm run test:postgres`; 12 scenarios plus wrapper) |
-| TypeScript and web production build | Passed (`npm run check`) |
-| Native local dependency bootstrap | Passed with PostgreSQL 16.15 and Ollama 0.40.14 on the M5 |
-| Real local generation | `qwen3.5:4b`: 343 input / 1,114 output tokens; provider-reported duration 38.75 seconds for one smoke mission |
-| Browser local Ollama flow | Created → queued/running → exact document → approve → saved artifact; download bytes match both proposal and persisted artifact |
-| Full local service restart | PostgreSQL, Ollama, API, worker, and web restarted; the approved bytes and single artifact event persisted and runtime returned ready |
-| Current mobile/desktop checks | Live review at 1440px; Model control and live-mission dialog at 390px with no horizontal overflow; mobile Models navigation works |
-| Prior simulation browser coverage | Desktop approval/reload, mobile rejection, exact-document access, keyboard skip navigation, no horizontal overflow at 390px/769px |
-| Backup/restore | Not implemented or verified |
-| Native iOS build | Not implemented or verified |
+| Check                                                     | Actual result                                                                                                                                                                                                                                                           |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit/API/provider/native-transport/source/startup tests   | 93 passed, no failures or skips (`npm run check`)                                                                                                                                                                                                                       |
+| Real PostgreSQL/pg-boss/auth/knowledge/outbox integration | 47 passed, no failures or skips (`npm run test:postgres`)                                                                                                                                                                                                               |
+| TypeScript and production web build                       | Root/mobile strict typecheck and web build passed. Markdown is a separate lazy-loaded chunk.                                                                                                                                                                            |
+| Native iOS export                                         | Passed against final shared contracts: 797 modules, 2.6MB Hermes bundle.                                                                                                                                                                                                |
+| Native compilation                                        | Xcode 27 Release Simulator build passed with local ad-hoc signing; final rebuild passed after shared-contract changes. No EAS/account/paid build used.                                                                                                                  |
+| Actual Simulator owner flow                               | iPhone 18 Pro/iOS 27: sign-in → real run list → exact document → approval → Completed/artifact events → refresh; secure session survives process relaunch; sign-out then refresh remains gated.                                                                         |
+| Backup/restore                                            | Real pg_dump/pg_restore roundtrip between two disposable PostgreSQL 16 clusters passed, preserving exact content/evidence/decisions/events/owner binding, with permission/checksum/empty-target guards, session revocation, pending-job quarantine and heartbeat reset. |
+| Self-host startup                                         | Built web root, liveness and readiness returned200; anonymous business access returned401; original owner state remains unconfigured; private-dotfile request refused.                                                                                                  |
+| Authenticated real-model browser flow                     | Owner sign-in → source paste/index → manual memory → required grounded mission → retained citation navigation → exact approval → local outbox → actual browser download.                                                                                                |
+| Final live QA observation                                 | qwen3.5: 4b: 870 input/858 output tokens, 35.27s provider duration, 3 retained excerpts (M1/S1/S2), 7, 414-byte approved test document. This is one observation, not a benchmark.                                                                                       |
+| Exact download and replay                                 | Browser-downloaded JSON matches the API bytes; Markdown equals proposal and persisted artifact, SHA-256 matches, workflow/approval/evidence match; replay leaves one artifact-save event and revision5.                                                                 |
+| Browser auth and responsive checks                        | Owner approval/reload/sign-out passed in disposable schemas. Onboarding and the completed outbox fit 390px without horizontal overflow. Earlier live/model/simulation checks cover 1440px/769px/390px.                                                                  |
+| Dependency audit                                          | 0 reported vulnerabilities after targeted patched glob/minimatch overrides; Expo export and native build passed with those overrides.                                                                                                                                   |
+| Source offer                                              | Deterministic clean-HEAD packaging and fixed-path API tests passed; actual release archive is generated after the clean reviewed commit. No repository publication is implied.                                                                                          |
 
-The live smoke mission is retained in ignored local PostgreSQL data, not seeded or committed into the repository. Its generated document is an unverified draft, not a declaration of release readiness. The timing is one observed run, not a benchmark. A single smaller model was downloaded under the founder's authorization; no paid model route was used.
+The final authenticated workflow used temporary schemas and synthetic owner credentials. It did not configure the founder's actual owner account. Its source text described the project's observed scope; generated claims remained explicitly unverified. The QA draft contained wording errors, including conflating native Simulator and web verification and calling authentication a simulation in one section. Approval exercised local persistence only; it was **not** editorial approval for a real launch. No generated content was published. Human factual/content review and representative-corpus quality evaluation remain necessary.
 
-Database evidence covers atomic run+queue rollback, immutable event enforcement, concurrent approvals across repository instances, workspace-qualified access, reconnect persistence, recovery, duplicate jobs, worker heartbeat, bounded failures, exhausted-job reconciliation, migration checksum refusal, and corrupt-state detection. Cancellation regressions deliberately ignore abort signals in the fake generator and prove obsolete results cannot publish after a lost lease or shutdown.
+A previous full restart of Vuzmi-owned PostgreSQL, Ollama, API, worker and web preserved a real approved artifact and returned runtime readiness. The current isolated integration suites also cover reconnects, concurrent/replayed approvals, retained evidence after source deletion, owner-session/revocation boundaries and interrupted persistence. The recovery drill is distinct from an operational encrypted backup service.
 
-## Next milestone
+## Remaining release boundaries
 
-1. Ingest versioned owned product documents; add source-scoped retrieval with real citations, deletion, and explicit curated memory.
-2. Complete the founder release package and durable local outbox using retrieved evidence; keep proposed work distinct from verified outcomes.
-3. Add authenticated private deployment, the native iOS approval companion, packaging, and backup/restore gates.
-
-OpenAI and Claude are not implemented or live-verified. Public SaaS, tenant isolation, billing, automated development/IT execution, client support, marketing/sales connectors, and automated selling remain roadmap work. No source repository has been published, infrastructure issue posted, DNS changed, or paid service enabled. The licence remains a founder decision.
+- The founder must choose actual owner credentials through first-run setup. Known test credentials are never installed into the operator auth schema.
+- The prepared [infrastructure request](INFRASTRUCTURE_REQUEST.md) has not been posted. CPU-server/Linux deployment, private ingress/TLS, deployment supervision, separate migration/runtime roles and encrypted off-host operational recovery need target-environment validation.
+- Native UI rejection/conflict paths, retained-source citation navigation, backend-loss recovery and large accessibility text sizes need additional device testing; physical-device networking, distribution signing and App Store delivery are unverified. Simulator success is not device/store readiness.
+- Representative retrieval/model quality and content editing require continued evaluation. Citations are traceable context, not proof of factual correctness. Source/profile migrations, large-file sync/OCR and production deletion/backup erasure are not implemented.
+- Public multitenancy, billing, arbitrary workflow graphs, code/IT execution, support integrations, marketing/sales sends, automatic selling and subscription-backed provider sign-in remain future work. No paid model calls, customer messages, infrastructure mutations, DNS changes or public repository release occurred.

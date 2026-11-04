@@ -2,7 +2,13 @@
   "name": "@vuzmi/providers",
   "version": "0.1.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "type": "module",
-  "exports": "./src/index.ts"
+  "exports": {
+    ".": "./src/index.ts",
+    "./cloud": "./src/cloud.ts"
+  },
+  "dependencies": {
+    "@vuzmi/core": "*"
+  }
 }

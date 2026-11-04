@@ -1,47 +1,44 @@
 # Vuzmi
 
-An open-source, self-hostable business orchestration platform for coordinated agents, models, knowledge, and operations.
+A self-hosted business orchestration platform bringing agents, models, knowledge and operations into one control plane. Original project code is licensed under [AGPL-3.0-only](LICENSE).
 
-Vuzmi will connect development and IT operations with client support, marketing, and sales through one execution system. Web and iOS clients will share a backend that supports OpenAI, Anthropic Claude, and Ollama.
+Vuzmi's larger direction is coordinated development, IT operations, support, marketing and sales with web/iOS clients and an open backend. The current private alpha foundation focuses on one reliable workflow: owned product knowledge → real local model draft → cited review → exact approval → durable local package. It does not autonomously implement, deploy, publish, contact customers or sell subscriptions.
 
-## Start here
+## Start locally
 
-- [Product definition](docs/PRODUCT.md): audience, outcomes, scope, and open decisions.
-- [Architecture](docs/ARCHITECTURE.md): components, data, execution, security, deployment, and technical decisions.
-- [Build plan](docs/BUILD_PLAN.md): the first seven days, acceptance gates, and the path to a hosted SaaS.
-- [Research](docs/RESEARCH.md): primary sources and integration constraints.
-- [Interface design](docs/DESIGN.md): visual system, desktop/mobile flows, and interaction states.
-- [Development](docs/DEVELOPMENT.md): run the current slice locally.
-- [Delivery status](docs/STATUS.md): implemented features and verification evidence.
-- [Infrastructure request](docs/INFRASTRUCTURE_REQUEST.md): an unposted handoff draft for the existing infrastructure team.
-
-## Run locally
-
-Use Node.js 22.12 or later in the 22.x series, npm 10, native PostgreSQL 16 tools, and Ollama:
+Use Node.js 22.13+ in the 22.x line, npm 10, native PostgreSQL 16 with pgvector 0.8.7, and local Ollama. Follow [development instructions](docs/DEVELOPMENT.md) for native extension installation.
 
 ```sh
 npm ci
 npm run services:start
-# One-time download if this model is not installed:
+# One-time model downloads if absent:
 OLLAMA_HOST=http://127.0.0.1:11435 ollama pull qwen3.5:4b
+OLLAMA_HOST=http://127.0.0.1:11435 ollama pull embeddinggemma:300m
 npm run dev
 ```
 
-Open [the local web client](http://127.0.0.1:5173). The API binds to `127.0.0.1:4310`. Ctrl-C stops the clients and worker; `npm run services:stop` stops Vuzmi's database and Ollama processes. Existing services on Ollama's usual port 11434 are untouched.
+Open [the web client](http://127.0.0.1:5173). First-run setup uses the private key in `.data/dev/owner-setup-key`; choose your own owner credentials. The helper owns private local PostgreSQL and a cloud-disabled Ollama daemon on 11435, leaving the user's normal11434 service untouched. Ctrl-C stops clients/API/worker; `npm run services:stop` stops the owned dependencies while preserving data.
+
+In **Knowledge & memory**, add owned text/Markdown and wait for indexing. Create a **Local Ollama** mission with explicit evidence selections. Review the actual citations and document, then approve to save those exact bytes. **Local outbox** downloads the approved Markdown with its hashes, provenance, retained evidence and decision record. Supplied claims and model output remain unverified.
 
 ```sh
 npm run check
 npm run test:postgres
+npm run export:ios
+npm run test:recovery
+npm run build
+npm start
 ```
 
-Create a mission using **Local Ollama** to generate a draft with an installed local model, or choose the explicitly labelled deterministic **Simulation**. Review the exact document and approve or reject it. Approval saves the reviewed bytes as a local Markdown artifact. PostgreSQL persists runs, events, approvals, and artifacts; a separate pg-boss worker performs bounded, recoverable generation.
+`npm start` serves the built web client and API together on [loopback 4310](http://127.0.0.1:4310), alongside the worker; PostgreSQL/Ollama must already be available. Owner authentication is required. Native iOS uses local Expo/Xcode tooling; see [mobile instructions](apps/mobile/README.md). No paid cloud build or model call is required. `npm run dev:simulation` remains an explicit, visibly labelled UI-only bypass with separate file history.
 
-Model output remains unverified. No repository changes, tools, deployment, external messages, or purchases are performed. OpenAI, Claude, RAG, authentication, and native iOS remain planned. Keep this private development slice on loopback; it is not ready for network deployment.
+## Project records
 
-For the simulation alone, use `npm run dev:simulation`; no database or Ollama is required. See [development instructions](docs/DEVELOPMENT.md) for storage, configuration, and verification boundaries.
+- [Product](docs/PRODUCT.md), [architecture](docs/ARCHITECTURE.md), [build plan](docs/BUILD_PLAN.md) and [UI design](docs/DESIGN.md).
+- [Delivery status](docs/STATUS.md): exact implemented and verified scope.
+- [Development](docs/DEVELOPMENT.md), [recovery](docs/RECOVERY.md), [licensing](docs/LICENSING.md) and [research](docs/RESEARCH.md).
+- [Infrastructure request](docs/INFRASTRUCTURE_REQUEST.md): an unposted draft for existing hardware and infrastructure staff.
 
-## Project status
+OpenAI and Claude adapters are contract-tested and disabled, with no live calls. Public SaaS, multi-tenant isolation, billing, external connectors, automated operations and selling remain later milestones. Source deletion removes active retrieval data; historical evidence, approved packages and backups remain retained under the disclosed private-alpha boundary.
 
-Planning and initial implementation, started 4 November 2026. The complete product vision is a roadmap, not a statement of existing functionality. The first week targets an alpha with a reliable end-to-end workflow.
-
-The open-source licence is a founder decision still to be made; no licence grant has been selected yet. Do not treat this repository as publicly released software until that decision is recorded.
+The local source is licensed; no GitHub repository has been published, infrastructure issue posted, DNS changed or production release performed. Keep this evaluation on loopback until the private-ingress and operational release gates pass.

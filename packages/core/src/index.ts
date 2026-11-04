@@ -1,4 +1,13 @@
 import { z } from "zod";
+import {
+  evidenceSelectionSchema,
+  evidenceSnapshotSchema,
+} from "./knowledge.js";
+import { founderReleaseWorkflowRef, workflowRefSchema } from "./workflow.js";
+export * from "./knowledge.js";
+export * from "./auth.js";
+export * from "./outbox.js";
+export * from "./workflow.js";
 
 export const domainSchema = z.enum([
   "build",
@@ -31,8 +40,13 @@ export const createRunSchema = z
     domain: domainSchema.default("build"),
     mode: z.enum(["simulation", "ollama"]).optional(),
     model: z.string().trim().min(1).max(200).optional(),
+    knowledge: evidenceSelectionSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) => !value.knowledge || value.mode === "ollama",
+    "Required knowledge is supported only for local model missions.",
+  );
 export type CreateRunInput = z.infer<typeof createRunSchema>;
 export const decisionSchema = z
   .object({
@@ -63,6 +77,7 @@ export const runSchema = z.object({
   domain: domainSchema,
   status: runStatusSchema,
   mode: z.enum(["simulation", "ollama"]),
+  workflow: workflowRefSchema.optional(),
   revision: z.number().int().positive(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -75,6 +90,8 @@ export const runSchema = z.object({
   }),
   proposal: proposalSchema.nullable(),
   events: z.array(runEventSchema),
+  knowledge: evidenceSelectionSchema.optional(),
+  evidence: evidenceSnapshotSchema.optional(),
   attemptId: z.string().optional(),
   usage: z
     .object({
@@ -91,7 +108,8 @@ export const runSchema = z.object({
       decision: z.enum(["approve", "reject"]),
       fingerprint: z.string(),
       revision: z.number().int().positive(),
-      actor: z.literal("local-operator"),
+      actor: z.string().min(1),
+      actorName: z.string().min(1).optional(),
       decidedAt: z.string().datetime(),
     })
     .optional(),
@@ -185,8 +203,8 @@ export function simulationContent(input: CreateRunInput): string {
     "## Handoff boundary",
     "Approval saves this document to the local artifact library. It does not change code, ship a release, post an infrastructure issue, publish content, or contact customers.",
     "",
-    "## Next foundation work",
-    "Connect a verified local Ollama runtime, PostgreSQL-backed execution, and versioned knowledge before calling this a model-driven alpha workflow.",
+    "## Verification boundary",
+    "This run used the deterministic simulation. Inspect Model control and choose Local Ollama for an actual model call; select ready knowledge explicitly when grounded output is required.",
   ].join("\n");
 }
 
@@ -207,6 +225,7 @@ export function createSimulationRun(
     domain: input.domain,
     status: "waiting_approval",
     mode: "simulation",
+    workflow: { ...founderReleaseWorkflowRef },
     revision: 1,
     createdAt: context.now,
     updatedAt: context.now,
@@ -246,7 +265,12 @@ export function createSimulationRun(
   };
 }
 
-export function decideRun(run: Run, input: DecisionInput, now: string): Run {
+export function decideRun(
+  run: Run,
+  input: DecisionInput,
+  now: string,
+  actor?: { id: string; name: string },
+): Run {
   if (run.decision) {
     if (
       run.decision.decision === input.decision &&
@@ -286,7 +310,12 @@ export function decideRun(run: Run, input: DecisionInput, now: string): Run {
     status: approved ? "completed" : "cancelled",
     revision: run.revision + 1,
     updatedAt: now,
-    decision: { ...input, actor: "local-operator", decidedAt: now },
+    decision: {
+      ...input,
+      actor: actor?.id ?? "local-operator",
+      ...(actor ? { actorName: actor.name } : {}),
+      decidedAt: now,
+    },
     events: [
       ...run.events,
       {
@@ -294,8 +323,8 @@ export function decideRun(run: Run, input: DecisionInput, now: string): Run {
         type: approved ? "approval.approved" : "approval.rejected",
         occurredAt: now,
         message: approved
-          ? "Local operator approved this exact artifact."
-          : "Local operator rejected the proposal. No artifact was saved.",
+          ? `${actor ? "Workspace owner" : "Local operator"} approved this exact artifact.`
+          : `${actor ? "Workspace owner" : "Local operator"} rejected the proposal. No artifact was saved.`,
       },
     ],
   };
@@ -356,6 +385,8 @@ export function createQueuedRun(
     brief: input.brief,
     domain: input.domain,
     mode: "ollama",
+    workflow: { ...founderReleaseWorkflowRef },
+    knowledge: input.knowledge,
     status: "queued",
     revision: 1,
     createdAt: context.now,
@@ -424,6 +455,11 @@ export function completeGeneration(
       "INVALID_STATE",
       "The generated document is empty or exceeds the supported size.",
     );
+  if (run.knowledge && run.evidence?.status !== "matched")
+    throw new DomainError(
+      "INVALID_STATE",
+      "Required evidence must be recorded before a generated draft can be accepted.",
+    );
   const action = {
     kind: "save_local_artifact" as const,
     destination: "Local artifact library" as const,
@@ -444,7 +480,9 @@ export function completeGeneration(
     events: addEvent(
       run,
       "generation.completed",
-      "Local Ollama returned a draft. Its factual claims remain unverified; no tools or retrieval were run.",
+      run.evidence?.status === "matched"
+        ? "Local Ollama returned a draft using the recorded evidence. Its claims still require review; no tools were run."
+        : "Local Ollama returned a draft. Its factual claims remain unverified; no tools or retrieval were run.",
       context.now,
     ),
   };
@@ -455,6 +493,46 @@ export function completeGeneration(
     context.now,
   );
   return generated;
+}
+
+export function attachEvidence(
+  run: Run,
+  context: {
+    attemptId: string;
+    expectedRevision: number;
+    evidence: import("./knowledge.js").EvidenceSnapshot;
+    now: string;
+  },
+): Run | undefined {
+  if (
+    run.mode !== "ollama" ||
+    !run.knowledge ||
+    run.status !== "running" ||
+    run.attemptId !== context.attemptId ||
+    run.revision !== context.expectedRevision
+  )
+    return undefined;
+  if (run.evidence) return run;
+  const evidence = evidenceSnapshotSchema.parse(context.evidence);
+  if ((evidence.status === "matched") !== evidence.items.length > 0)
+    throw new DomainError(
+      "INVALID_STATE",
+      "Evidence status does not match its recorded passages.",
+    );
+  return {
+    ...run,
+    evidence,
+    revision: run.revision + 1,
+    updatedAt: context.now,
+    events: addEvent(
+      run,
+      "retrieval.completed",
+      evidence.status === "matched"
+        ? `Recorded ${evidence.items.length} selected evidence passages for review. Source claims remain unverified.`
+        : "Required evidence was insufficient. No model generation is authorized.",
+      context.now,
+    ),
+  };
 }
 
 export function failGeneration(
@@ -516,6 +594,25 @@ export function parseRunIntegrity(
   );
   if (invalidSequence) throw new Error("Invalid run event sequence.");
   const proposal = run.proposal;
+  if (run.evidence) {
+    if (!run.knowledge || run.mode !== "ollama")
+      throw new Error("Evidence has no explicit selection.");
+    if ((run.evidence.status === "matched") !== run.evidence.items.length > 0)
+      throw new Error("Inconsistent evidence status.");
+    const labels = new Set<string>();
+    for (const item of run.evidence.items) {
+      if (
+        labels.has(item.citation) ||
+        fingerprint(item.text) !== item.contentHash
+      )
+        throw new Error("Inconsistent evidence passage.");
+      labels.add(item.citation);
+    }
+  }
+  if (proposal && run.knowledge && run.evidence?.status !== "matched")
+    throw new Error(
+      "Required evidence is missing from the generated proposal.",
+    );
   if (proposal) {
     const { kind, destination, content } = proposal;
     if (

@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Vuzmi",
+    "slug": "vuzmi-local-companion",
+    "version": "0.1.0",
+    "scheme": "vuzmi",
+    "platforms": ["ios"],
+    "orientation": "default",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#080e13",
+    "updates": { "enabled": false },
+    "ios": {
+      "bundleIdentifier": "com.vuzmi.localalpha",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "localhost": { "NSExceptionAllowsInsecureHTTPLoads": true },
+            "127.0.0.1": { "NSExceptionAllowsInsecureHTTPLoads": true },
+            "::1": { "NSExceptionAllowsInsecureHTTPLoads": true }
+          }
+        }
+      }
+    }
+  }
+}

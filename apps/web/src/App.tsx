@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -8,14 +10,19 @@ import {
 } from "react";
 import {
   createRunSchema,
+  deriveRunSteps,
+  getRunWorkflowLabel,
   domainLabels,
   domainSchema,
   type CreateRunInput,
   type Domain,
   type Run,
   type RunStatus,
+  type SafeOwner,
   type WorkspaceSnapshot,
   type RuntimeInfo,
+  type KnowledgeSnapshot,
+  type EvidenceSelection,
 } from "@vuzmi/core";
 import {
   ApiError,
@@ -28,9 +35,18 @@ import {
 import { BrandMark, Icon, type IconName } from "./icons";
 import { runtimeBlockReason } from "./runtime";
 import { RuntimeView } from "./RuntimeView";
+import { KnowledgeView } from "./KnowledgeView";
+import { OutboxView } from "./OutboxView";
+const ArtifactDocument = lazy(() =>
+  import("./ArtifactDocument").then((module) => ({
+    default: module.ArtifactDocument,
+  })),
+);
+import { getKnowledge } from "./knowledgeApi";
+import { EvidencePanel, EvidencePicker, validSelection } from "./Evidence";
 
 type Route = {
-  page: "command" | "runs" | "approvals" | "roadmap";
+  page: "command" | "runs" | "approvals" | "outbox" | "roadmap";
   runId?: string;
   section?: string;
 };
@@ -58,6 +74,7 @@ function readRoute(): Route {
       return { page: "runs" };
     }
   }
+  if (parts[0] === "outbox") return { page: "outbox" };
   if (parts[0] === "approvals") return { page: "approvals" };
   if (parts[0] === "roadmap")
     return { page: "roadmap", section: parts[1] ?? "foundation" };
@@ -105,7 +122,17 @@ function preserveNewerRuns(current: Run[], incoming: Run[]): Run[] {
   return latestRuns([...byId.values()]);
 }
 
-export function App() {
+export function App({
+  owner = null,
+  development = true,
+  onSignOut,
+  signingOut = false,
+}: {
+  owner?: SafeOwner | null;
+  development?: boolean;
+  onSignOut?: () => void;
+  signingOut?: boolean;
+}) {
   const [route, setRoute] = useState<Route>(readRoute);
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,6 +146,35 @@ export function App() {
   const [runtimeLoading, setRuntimeLoading] = useState(true);
   const requestVersion = useRef(0);
   const runtimeVersion = useRef(0);
+  const [knowledge, setKnowledge] = useState<KnowledgeSnapshot | null>(null);
+  const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(true);
+  const knowledgeVersion = useRef(0);
+  const refreshKnowledge = useCallback(async () => {
+    const version = ++knowledgeVersion.current;
+    setKnowledgeLoading(true);
+    try {
+      const incoming = await getKnowledge();
+      if (version !== knowledgeVersion.current) return;
+      setKnowledge(incoming);
+      setKnowledgeError(null);
+    } catch (error) {
+      if (version === knowledgeVersion.current)
+        setKnowledgeError(errorMessage(error));
+    } finally {
+      if (version === knowledgeVersion.current) setKnowledgeLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    void refreshKnowledge();
+    const interval = window.setInterval(() => {
+      void refreshKnowledge();
+    }, 6000);
+    return () => {
+      window.clearInterval(interval);
+      knowledgeVersion.current += 1;
+    };
+  }, [refreshKnowledge]);
 
   const refreshRuntime = useCallback(async () => {
     const version = ++runtimeVersion.current;
@@ -241,6 +297,7 @@ export function App() {
         route={route}
         waitingCount={waitingCount}
         connected={connected}
+        operatorName={owner?.name ?? "Local operator"}
       />
       <div className="app-body">
         <p className="sr-only" aria-live="polite" aria-atomic="true">
@@ -259,6 +316,18 @@ export function App() {
             </div>
           </div>
           <div className="topbar-end">
+            <span className={development ? "development-badge" : "owner-name"}>
+              {development ? "Development · no sign-in" : owner?.name}
+            </span>
+            {!development && (
+              <button
+                className="button button-small button-secondary"
+                onClick={onSignOut}
+                disabled={signingOut}
+              >
+                Sign out
+              </button>
+            )}
             <span className="local-policy">
               <Icon name="shield" size={15} /> Cloud execution off
             </span>
@@ -366,8 +435,17 @@ export function App() {
               onDomain={setDomain}
               onNew={() => setMissionOpen(true)}
             />
+          ) : route.page === "outbox" ? (
+            <OutboxView />
           ) : route.page === "approvals" ? (
             <ApprovalsView runs={runs} />
+          ) : route.section === "knowledge" ? (
+            <KnowledgeView
+              snapshot={knowledge}
+              error={knowledgeError}
+              loading={knowledgeLoading}
+              onRefresh={refreshKnowledge}
+            />
           ) : route.section === "models" ? (
             <RuntimeView
               runtime={runtime}
@@ -384,6 +462,9 @@ export function App() {
             <span>
               Vuzmi <span className="footer-divider">/</span> Private alpha
             </span>
+            <a className="footer-source" href="/source">
+              Source · AGPL-3.0
+            </a>
             <span>
               <span className="small-dot" /> Local-only · Human reviewed
             </span>
@@ -410,6 +491,13 @@ export function App() {
           active={route.page === "approvals"}
         />
         <MobileLink
+          href="#/roadmap/knowledge"
+          name="knowledge"
+          label="Knowledge"
+          ariaLabel="Knowledge and memory"
+          active={route.page === "roadmap" && route.section === "knowledge"}
+        />
+        <MobileLink
           href="#/roadmap/models"
           name="models"
           label="Models"
@@ -422,6 +510,8 @@ export function App() {
           initialDomain={domain === "all" ? "build" : domain}
           runtime={runtime}
           runtimeError={runtimeError}
+          knowledge={knowledge}
+          knowledgeError={knowledgeError}
           onClose={() => setMissionOpen(false)}
           onCreated={(run) => {
             updateRun(run);
@@ -438,8 +528,10 @@ function Sidebar({
   route,
   waitingCount,
   connected,
+  operatorName,
 }: {
   route: Route;
+  operatorName: string;
   waitingCount: number;
   connected: boolean;
 }) {
@@ -451,6 +543,12 @@ function Sidebar({
   }[] = [
     { label: "Command", icon: "command", href: "#/", page: "command" },
     { label: "Runs", icon: "runs", href: "#/runs", page: "runs" },
+    {
+      label: "Local outbox",
+      icon: "download",
+      href: "#/outbox",
+      page: "outbox",
+    },
     {
       label: "Approvals",
       icon: "check",
@@ -492,6 +590,15 @@ function Sidebar({
           <Icon name="models" size={19} />
           <span>Model control</span>
         </a>
+        <a
+          aria-label="Knowledge and memory"
+          className={`nav-link ${route.section === "knowledge" ? "active" : ""}`}
+          aria-current={route.section === "knowledge" ? "page" : undefined}
+          href="#/roadmap/knowledge"
+        >
+          <Icon name="knowledge" size={19} />
+          <span>Knowledge & memory</span>
+        </a>
       </nav>
       <div className="sidebar-label platform-label">
         THE FOUNDATION <span>PLANNED</span>
@@ -504,14 +611,6 @@ function Sidebar({
         >
           <Icon name="agents" size={19} />
           <span>Agents & automations</span>
-        </a>
-        <a
-          aria-label="Knowledge and memory, planned"
-          className={`nav-link ${route.section === "knowledge" ? "active" : ""}`}
-          href="#/roadmap/knowledge"
-        >
-          <Icon name="knowledge" size={19} />
-          <span>Knowledge & memory</span>
         </a>
       </nav>
       <div className="sidebar-bottom">
@@ -529,9 +628,16 @@ function Sidebar({
           LOCAL ALPHA <span>v0.1</span>
         </div>
         <div className="operator">
-          <span className="operator-avatar">LO</span>
+          <span className="operator-avatar">
+            {operatorName
+              .split(/\s+/)
+              .map((word) => word[0])
+              .slice(0, 2)
+              .join("")
+              .toUpperCase()}
+          </span>
           <div>
-            <strong>Local operator</strong>
+            <strong>{operatorName}</strong>
             <span>Private workspace</span>
           </div>
         </div>
@@ -1105,6 +1211,16 @@ function RunDetail({
   const [copyState, setCopyState] = useState<string | null>(null);
   const proposal = run.proposal;
   const documentContent = run.artifact?.content ?? proposal?.content;
+  const unresolvedCitations = [
+    ...new Set(
+      [...(documentContent ?? "").matchAll(/\[([SM][1-9][0-9]*)\]/g)].map(
+        (match) => match[1]!,
+      ),
+    ),
+  ].filter(
+    (citation) =>
+      !run.evidence?.items.some((item) => item.citation === citation),
+  );
   useEffect(() => {
     setError(null);
     setCopyState(null);
@@ -1183,12 +1299,20 @@ function RunDetail({
             <span>{domainLabels[run.domain]}</span>
             <span className="metadata-dot">·</span>
             <time dateTime={run.createdAt}>{dateTime(run.createdAt)}</time>
-            <span className="metadata-dot">·</span>Local operator
+            <span className="metadata-dot">·</span>Private workspace
           </p>
         </div>
       </div>
       <div className="run-detail-grid">
         <div className="run-main-column">
+          {(run.knowledge || run.evidence) && (
+            <EvidencePanel
+              evidence={run.evidence}
+              requested={Boolean(run.knowledge)}
+              prefix={run.id}
+              unresolved={unresolvedCitations}
+            />
+          )}
           {documentContent !== undefined ? (
             <section className="artifact-panel">
               <div className="artifact-toolbar">
@@ -1241,8 +1365,11 @@ function RunDetail({
                 <div className="provider-output-notice">
                   <Icon name="alert" size={17} />
                   <p>
-                    Unverified local model output. Review every factual claim;
-                    no retrieval, repository inspection, or tools were run.
+                    Unverified local model output. Review every factual claim.
+                    {run.evidence?.status === "matched"
+                      ? " Recorded evidence was retrieved; citations still require your review."
+                      : " No retrieval was used."}{" "}
+                    No repository inspection or tools were run.
                   </p>
                 </div>
               )}
@@ -1251,7 +1378,15 @@ function RunDetail({
                 className="document-preview"
                 tabIndex={-1}
               >
-                <MarkdownDocument content={documentContent} />
+                <Suspense
+                  fallback={<p role="status">Opening the exact document…</p>}
+                >
+                  <ArtifactDocument
+                    content={documentContent}
+                    evidence={run.evidence}
+                    prefix={run.id}
+                  />
+                </Suspense>
               </div>
               <div className="artifact-bottom">
                 <span className="small-dot" />
@@ -1266,6 +1401,35 @@ function RunDetail({
           ) : (
             <GenerationProgress run={run} />
           )}
+          <details className="workflow-panel">
+            <summary>
+              {getRunWorkflowLabel(run)}
+              <span>Inspect workflow steps</span>
+            </summary>
+            <ol>
+              {deriveRunSteps(run).map((step, index) => (
+                <li key={step.id} data-status={step.status}>
+                  <span className="workflow-stage-number">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <div className="workflow-stage-title">
+                      <strong>{step.label}</strong>
+                      <span>{step.status.replaceAll("_", " ")}</span>
+                    </div>
+                    <p>{step.detail}</p>
+                    {step.eventSequences.length > 0 && (
+                      <small>
+                        Ledger{" "}
+                        {step.eventSequences.length === 1 ? "event" : "events"}{" "}
+                        {step.eventSequences.join(", ")}
+                      </small>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </details>
           <section className="timeline-section">
             <div className="section-header">
               <div>
@@ -1439,7 +1603,11 @@ function RunDetail({
               <div className="recorded-decision">
                 <Icon name={approved ? "check" : "close"} size={15} />
                 <span>
-                  {approved ? "Approved" : "Rejected"} by local operator
+                  {approved ? "Approved" : "Rejected"} by{" "}
+                  {run.decision.actorName ??
+                    (run.decision.actor === "local-operator"
+                      ? "local operator"
+                      : "workspace owner")}
                   <br />
                   <time dateTime={run.decision.decidedAt}>
                     {dateTime(run.decision.decidedAt)}
@@ -1448,9 +1616,23 @@ function RunDetail({
               </div>
             )}
           </section>
+          {run.artifact && (
+            <a className="button button-secondary" href="#/outbox">
+              <Icon name="download" size={16} />
+              Open approved package
+            </a>
+          )}
           <section className="facts-panel">
             <div className="section-kicker">EXECUTION CONTEXT</div>
             <dl>
+              <div>
+                <dt>Workflow</dt>
+                <dd>
+                  {run.workflow
+                    ? `Founder release · v${run.workflow.version}`
+                    : "Legacy · version unknown"}
+                </dd>
+              </div>
               <div>
                 <dt>Mode</dt>
                 <dd>
@@ -1495,6 +1677,18 @@ function RunDetail({
               <div>
                 <dt>Storage</dt>
                 <dd>{storage === "postgres" ? "PostgreSQL" : "Local file"}</dd>
+              </div>
+              <div>
+                <dt>Evidence</dt>
+                <dd>
+                  {run.evidence
+                    ? run.evidence.status === "matched"
+                      ? `${run.evidence.items.length} retained excerpts`
+                      : "Insufficient"
+                    : run.knowledge
+                      ? "Required · pending"
+                      : "Not requested"}
+                </dd>
               </div>
               <div>
                 <dt>Destination</dt>
@@ -1556,47 +1750,6 @@ function RunDetail({
   );
 }
 
-function MarkdownDocument({ content }: { content: string }) {
-  const lines = content.split("\n");
-  const blocks: ReactNode[] = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]!;
-    if (!line.trim()) continue;
-    if (line.startsWith("# "))
-      blocks.push(<h2 key={index}>{line.slice(2)}</h2>);
-    else if (line.startsWith("## "))
-      blocks.push(<h3 key={index}>{line.slice(3)}</h3>);
-    else if (line.startsWith("> "))
-      blocks.push(<blockquote key={index}>{line.slice(2)}</blockquote>);
-    else if (line.startsWith("- ")) {
-      const first = index;
-      const items: ReactNode[] = [];
-      while (index < lines.length && lines[index]!.startsWith("- ")) {
-        const text = lines[index]!.slice(2);
-        items.push(
-          <li key={index}>
-            {text.startsWith("[ ] ") ? (
-              <>
-                <span
-                  className="document-checkbox"
-                  aria-label="Not completed"
-                />
-                {text.slice(4)}
-              </>
-            ) : (
-              text
-            )}
-          </li>,
-        );
-        index += 1;
-      }
-      index -= 1;
-      blocks.push(<ul key={first}>{items}</ul>);
-    } else blocks.push(<p key={index}>{line}</p>);
-  }
-  return <article className="markdown-document">{blocks}</article>;
-}
-
 function GenerationProgress({ run }: { run: Run }) {
   const failed = run.status === "failed";
   return (
@@ -1618,14 +1771,18 @@ function GenerationProgress({ run }: { run: Run }) {
         {failed
           ? "No draft was produced."
           : run.status === "running"
-            ? "The local model is working."
+            ? "Your mission is running."
             : "Your mission is queued."}
       </h2>
       <p>
         {failed
           ? "Generation stopped before a proposal was ready. No artifact was saved."
           : run.status === "running"
-            ? "The worker has started generation. A complete draft will appear here when the provider returns a usable result."
+            ? run.knowledge && !run.evidence
+              ? "The worker is preparing required evidence. No model output has been recorded."
+              : run.evidence?.status === "insufficient"
+                ? "Required evidence was insufficient. A draft cannot be produced without the required context."
+                : "Local execution is in progress. A complete draft will appear only after the provider returns a usable result."
             : "Waiting for the local worker. No model output exists yet."}
       </p>
       {run.error && (
@@ -1654,12 +1811,16 @@ function NewMissionDialog({
   initialDomain,
   runtime,
   runtimeError,
+  knowledge,
+  knowledgeError,
   onClose,
   onCreated,
 }: {
   initialDomain: Domain;
   runtime: RuntimeInfo | null;
   runtimeError: string | null;
+  knowledge: KnowledgeSnapshot | null;
+  knowledgeError: string | null;
   onClose: () => void;
   onCreated: (run: Run) => void;
 }) {
@@ -1671,6 +1832,10 @@ function NewMissionDialog({
     mode: "simulation",
   });
   const [model, setModel] = useState("");
+  const [requireEvidence, setRequireEvidence] = useState(false);
+  const [evidenceSelection, setEvidenceSelection] = useState<EvidenceSelection>(
+    { sourceIds: [], memoryIds: [] },
+  );
   const blockReason = runtimeBlockReason(runtime, runtimeError);
   const liveMode = input.mode === "ollama";
   const selectedModelAvailable = Boolean(
@@ -1694,6 +1859,22 @@ function NewMissionDialog({
   }, []);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (
+      liveMode &&
+      requireEvidence &&
+      (knowledgeError ||
+        !validSelection(knowledge, evidenceSelection) ||
+        evidenceSelection.sourceIds.length +
+          evidenceSelection.memoryIds.length ===
+          0)
+    ) {
+      setError(
+        knowledgeError
+          ? "Knowledge readiness could not be verified. Refresh Knowledge before requiring evidence."
+          : "Choose at least one ready source or unexpired confirmed memory. Unavailable evidence cannot be silently omitted.",
+      );
+      return;
+    }
     if (liveMode && (blockReason || !selectedModelAvailable)) {
       setError(
         blockReason ??
@@ -1704,6 +1885,7 @@ function NewMissionDialog({
     const parsed = createRunSchema.safeParse({
       ...input,
       ...(liveMode ? { model } : {}),
+      ...(liveMode && requireEvidence ? { knowledge: evidenceSelection } : {}),
     });
     if (!parsed.success) {
       setError(
@@ -1883,6 +2065,55 @@ function NewMissionDialog({
               setInput({ ...input, brief: event.target.value })
             }
           />
+          {liveMode && (
+            <section className="mission-knowledge">
+              <label className="require-evidence-toggle">
+                <input
+                  type="checkbox"
+                  checked={requireEvidence}
+                  disabled={
+                    submitting ||
+                    (!requireEvidence &&
+                      (!knowledge || Boolean(knowledgeError)))
+                  }
+                  onChange={(event) => setRequireEvidence(event.target.checked)}
+                />
+                <span>
+                  <strong>Require workspace evidence</strong>
+                  <small>
+                    No retrieval is the default. Selected sources and memories
+                    become a required context boundary.
+                  </small>
+                </span>
+              </label>
+              {knowledgeError && (
+                <p className="knowledge-hint">
+                  Knowledge could not be refreshed. Open Knowledge to check
+                  readiness.
+                </p>
+              )}
+              {requireEvidence && knowledge && (
+                <EvidencePicker
+                  snapshot={knowledge}
+                  selection={evidenceSelection}
+                  disabled={submitting}
+                  onChange={setEvidenceSelection}
+                />
+              )}
+              <a
+                className="text-link"
+                href="#/roadmap/knowledge"
+                aria-disabled={submitting}
+                onClick={(event) => {
+                  if (submitting) event.preventDefault();
+                  else onClose();
+                }}
+              >
+                Open Knowledge & memory
+                <Icon name="arrow" size={15} />
+              </a>
+            </section>
+          )}
           <div className="mission-mode">
             <div>
               {liveMode ? (
@@ -1900,7 +2131,9 @@ function NewMissionDialog({
             </div>
             <p>
               {liveMode
-                ? "Your brief is sent to the selected local Ollama model. Its output is unverified and requires review. No retrieval, repository inspection, tools, deployment, or messages."
+                ? requireEvidence
+                  ? "Selected workspace evidence is required before local generation. Missing or insufficient evidence stops the mission. Generated claims still need review; no repository inspection, tools, deployment, or messages."
+                  : "Your brief is sent to the selected local Ollama model. Its output is unverified and requires review. No retrieval, repository inspection, tools, deployment, or messages."
                 : "A deterministic template prepares a local release brief. No model calls, repository inspection, command execution, deployment, or messages."}
             </p>
           </div>
@@ -2056,8 +2289,10 @@ const roadmapContent: Record<
       },
       {
         title: "Knowledge & memory",
-        description: "Permitted source evidence and explicit retained context.",
+        description:
+          "Manage local sources, test retrieved passages, and curate confirmed workspace memory. Connector sync and automatic memory remain planned.",
         icon: "knowledge",
+        href: "#/roadmap/knowledge",
       },
       {
         title: "Model control",
@@ -2094,7 +2329,7 @@ function RoadmapView({ section }: { section: string }) {
         </span>
         <p>
           {section === "foundation"
-            ? "The foundation combines available local execution with planned agents, knowledge, and cloud providers."
+            ? "The foundation combines local execution and curated knowledge with planned agents, connectors, and cloud providers."
             : "This area describes planned capabilities."}{" "}
           The current slice supports local simulation and configured local
           Ollama generation, ending in reviewed local artifacts.
@@ -2111,7 +2346,7 @@ function RoadmapView({ section }: { section: string }) {
             <p>{feature.description}</p>
             {feature.href ? (
               <a className="text-link" href={feature.href}>
-                Open Model control
+                Open {feature.title}
                 <Icon name="arrow" size={16} />
               </a>
             ) : (

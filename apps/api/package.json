@@ -2,17 +2,19 @@
   "name": "@vuzmi/api",
   "version": "0.1.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts"
   },
   "dependencies": {
+    "@vuzmi/auth": "*",
     "@vuzmi/core": "*",
     "@vuzmi/providers": "*",
     "@vuzmi/runtime": "*",
     "fastify": "^5.12.8",
-    "tsx": "^4.20.6"
+    "tsx": "^4.20.6",
+    "@fastify/static": "10.1.10"
   }
 }

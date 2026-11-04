@@ -26,16 +26,16 @@ The shared conceptual sequence is:
 
 `Mission → Versioned automation → Run → Actions → Approval → Evidence → Outcome`
 
-| Term | Interface meaning |
-| --- | --- |
-| Mission | The operator's business objective and requested result. It is a human-facing concept, not a second execution engine. |
-| Automation | A reusable, versioned definition of steps, policies, and permitted effects. |
-| Run | One execution of a specific automation version. |
-| Agent | A versioned role, instructions, model policy, tools, and memory scope. |
-| Action | A proposed or attempted operation with identifiable inputs and effects. |
-| Approval | An attributable decision about an exact action or artifact revision. |
-| Evidence | Source passages, artifacts, tool results, and events supporting a decision or result. |
-| Outcome | A verified result at the implemented completion boundary. |
+| Term       | Interface meaning                                                                                                    |
+| ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| Mission    | The operator's business objective and requested result. It is a human-facing concept, not a second execution engine. |
+| Automation | A reusable, versioned definition of steps, policies, and permitted effects.                                          |
+| Run        | One execution of a specific automation version.                                                                      |
+| Agent      | A versioned role, instructions, model policy, tools, and memory scope.                                               |
+| Action     | A proposed or attempted operation with identifiable inputs and effects.                                              |
+| Approval   | An attributable decision about an exact action or artifact revision.                                                 |
+| Evidence   | Source passages, artifacts, tool results, and events supporting a decision or result.                                |
+| Outcome    | A verified result at the implemented completion boundary.                                                            |
 
 Domain choices filter the common system: All operations, Build, Operate, Support, Market, Sell. The first mission belongs to Build. A domain is not a separate application shell or a separate run history.
 
@@ -51,19 +51,19 @@ Avoid decorative gradient backgrounds, purple dashboard conventions, glowing car
 
 ### Colour tokens
 
-| Token | Value | Intended use |
-| --- | --- | --- |
-| `background` | `#080E13` | App shell and main canvas |
-| `surface` | `#0E171E` | Working sections and panels |
-| `surface-raised` | `#14212A` | Inspector, menu, dialog |
-| `border` | `#263A44` | Panel separators and secondary edges |
-| `text-primary` | `#EDF5F3` | Titles, body, important values |
-| `text-secondary` | `#9BAEB4` | Metadata and supporting content |
-| `accent` | `#79E4D0` | Primary action, active navigation, focus detail |
-| `outcome` | `#D2EE94` | Verified result emphasis, sparingly |
-| `warning` | `#F0BC72` | Review required and caution |
-| `danger` | `#FF8995` | Failure and destructive scope |
-| `information` | `#8DBAFF` | Informational state |
+| Token            | Value     | Intended use                                    |
+| ---------------- | --------- | ----------------------------------------------- |
+| `background`     | `#080E13` | App shell and main canvas                       |
+| `surface`        | `#0E171E` | Working sections and panels                     |
+| `surface-raised` | `#14212A` | Inspector, menu, dialog                         |
+| `border`         | `#263A44` | Panel separators and secondary edges            |
+| `text-primary`   | `#EDF5F3` | Titles, body, important values                  |
+| `text-secondary` | `#9BAEB4` | Metadata and supporting content                 |
+| `accent`         | `#79E4D0` | Primary action, active navigation, focus detail |
+| `outcome`        | `#D2EE94` | Verified result emphasis, sparingly             |
+| `warning`        | `#F0BC72` | Review required and caution                     |
+| `danger`         | `#FF8995` | Failure and destructive scope                   |
+| `information`    | `#8DBAFF` | Informational state                             |
 
 Pale accent-filled buttons use dark text. Status colours are always accompanied by readable text and an icon or shape. Validate actual text/background combinations during implementation; the palette is not a claim that every possible combination passes contrast requirements. A stronger border or focus outline is required where a control depends on a visible boundary.
 
@@ -78,13 +78,13 @@ Use a local system stack initially:
 
 The iOS client uses native platform typography. A locally bundled open font may be considered later after its licence and package are reviewed; it is not necessary for the alpha. Do not fetch Google Fonts, remote icons, background images, or paid assets at runtime.
 
-| Role | Desktop size | Usage |
-| --- | --- | --- |
-| Page title | 28–32px | One clear title per page |
-| Section title | 18–20px | Queue, evidence, timeline sections |
-| Body | 15px, approximately 1.5 line height | Operational content |
-| Label and metadata | 13px | Field labels, secondary facts |
-| Technical detail | 12–13px | IDs and compact trace metadata |
+| Role               | Desktop size                        | Usage                              |
+| ------------------ | ----------------------------------- | ---------------------------------- |
+| Page title         | 28–32px                             | One clear title per page           |
+| Section title      | 18–20px                             | Queue, evidence, timeline sections |
+| Body               | 15px, approximately 1.5 line height | Operational content                |
+| Label and metadata | 13px                                | Field labels, secondary facts      |
+| Technical detail   | 12–13px                             | IDs and compact trace metadata     |
 
 Use tabular numbers for durations, counts, and recorded usage. Use monospace selectively for IDs, code, hashes, and exact technical values rather than for all interface copy.
 
@@ -243,29 +243,29 @@ Timeline entries show an event label, recorded time, and useful details. No arti
 
 Clients consume canonical shared contracts. Use `waiting_approval` and `completed`; do not create alternate spellings such as `waiting_for_approval` or use step-level `succeeded` as a run state.
 
-| Run state | Main label | Typical next action |
-| --- | --- | --- |
-| `queued` | Queued | Inspect or cancel if supported |
-| `running` | In progress | Inspect current concrete step |
-| `waiting_approval` | Needs review | Review exact proposal |
-| `completed` | Completed | Open verified local result |
-| `failed` | Failed | Read cause and use supported retry |
-| `cancelled` | Cancelled | Read reason; create a new run if wanted |
+| Run state          | Main label   | Typical next action                     |
+| ------------------ | ------------ | --------------------------------------- |
+| `queued`           | Queued       | Inspect or cancel if supported          |
+| `running`          | In progress  | Inspect current concrete step           |
+| `waiting_approval` | Needs review | Review exact proposal                   |
+| `completed`        | Completed    | Open verified local result              |
+| `failed`           | Failed       | Read cause and use supported retry      |
+| `cancelled`        | Cancelled    | Read reason; create a new run if wanted |
 
 Future waiting/retry/paused states must be added to the shared schema before clients display them. Do not infer run success from the presence of an approval, a final model message, or a disconnected stream.
 
-| Fact | Honest display |
-| --- | --- |
-| Simulator generated a plan | “Local simulation” and “No model call” |
-| No provider configured | “Not configured” |
-| Provider configured but not tested | “Not verified” |
-| Backend connection lost | “Disconnected” with last updated time |
-| Cost not recorded | “Not measured,” not a fabricated currency value |
-| No model call occurred | “No provider call,” without claiming local compute is free |
-| Source retrieval not implemented | No citation panel implying retrieved evidence |
-| Outbox item saved | “Saved to local outbox,” not “Sent” |
-| Release plan created | “Release brief prepared,” not “Release shipped” |
-| Planned domain module | “Planned,” with concise scope and no fake statistics |
+| Fact                               | Honest display                                             |
+| ---------------------------------- | ---------------------------------------------------------- |
+| Simulator generated a plan         | “Local simulation” and “No model call”                     |
+| No provider configured             | “Not configured”                                           |
+| Provider configured but not tested | “Not verified”                                             |
+| Backend connection lost            | “Disconnected” with last updated time                      |
+| Cost not recorded                  | “Not measured,” not a fabricated currency value            |
+| No model call occurred             | “No provider call,” without claiming local compute is free |
+| Source retrieval not implemented   | No citation panel implying retrieved evidence              |
+| Outbox item saved                  | “Saved to local outbox,” not “Sent”                        |
+| Release plan created               | “Release brief prepared,” not “Release shipped”            |
+| Planned domain module              | “Planned,” with concise scope and no fake statistics       |
 
 ## 7. Later alpha screens
 
@@ -325,21 +325,21 @@ The initial loopback-only simulator is a desktop/local development boundary. Do 
 
 ## 9. Empty, failure, and recovery states
 
-| Situation | Required behaviour |
-| --- | --- |
-| New workspace | Explain the first real available mission; no seeded live metrics. |
-| No approvals | “No decisions waiting,” with a link to actual active work. |
-| Loading | Skeleton or readable loading text; do not flash false zero totals. |
-| Create run failed | Preserve input, explain failure, allow deliberate retry. |
-| Backend disconnected | Show last update, preserve the last known state, block unverified mutation results. |
-| Event stream interrupted | Reconnect or poll using supported contracts; do not concatenate duplicated events. |
-| Provider unavailable | Name the failed connection and explain permitted recovery; no silent egress change. |
-| Knowledge insufficient | State which evidence is missing; do not fabricate citations. |
-| Approval stale or already decided | Refresh the actual proposal/decision and explain why the old control is unavailable. |
-| Local artifact write failed | Show failure, preserve the reviewed proposal, do not claim completion. |
-| Retry unsupported | Provide useful error context; do not display a decorative Retry button. |
-| External outcome unknown in later workflows | Show uncertainty and reconciliation/review; never blindly offer a duplicate send. |
-| Optional module unavailable | Clearly mark Planned or Not configured and state the next real prerequisite. |
+| Situation                                   | Required behaviour                                                                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------ |
+| New workspace                               | Explain the first real available mission; no seeded live metrics.                    |
+| No approvals                                | “No decisions waiting,” with a link to actual active work.                           |
+| Loading                                     | Skeleton or readable loading text; do not flash false zero totals.                   |
+| Create run failed                           | Preserve input, explain failure, allow deliberate retry.                             |
+| Backend disconnected                        | Show last update, preserve the last known state, block unverified mutation results.  |
+| Event stream interrupted                    | Reconnect or poll using supported contracts; do not concatenate duplicated events.   |
+| Provider unavailable                        | Name the failed connection and explain permitted recovery; no silent egress change.  |
+| Knowledge insufficient                      | State which evidence is missing; do not fabricate citations.                         |
+| Approval stale or already decided           | Refresh the actual proposal/decision and explain why the old control is unavailable. |
+| Local artifact write failed                 | Show failure, preserve the reviewed proposal, do not claim completion.               |
+| Retry unsupported                           | Provide useful error context; do not display a decorative Retry button.              |
+| External outcome unknown in later workflows | Show uncertainty and reconciliation/review; never blindly offer a duplicate send.    |
+| Optional module unavailable                 | Clearly mark Planned or Not configured and state the next real prerequisite.         |
 
 Errors belong near the affected action, with a persistent page-level state when necessary. Toasts may confirm a completed action but must not be the only record of a failed or consequential operation.
 
@@ -397,3 +397,17 @@ Keep the approved visual direction. A mission explicitly selects Simulation or L
 Runs without a proposal display their persisted queued/running/failed state and event trail. Approval, artifact preview, and export appear only after a concrete model result has been saved. Real outputs are labelled as unverified local drafts; they do not imply retrieval, tests, deployment, or publication. Show the selected model and observed usage separately from simulation facts.
 
 Model control becomes an operative local runtime view showing observed Ollama connectivity, eligible installed models, storage backend, and worker readiness. Runtime discovery failure must not hide saved workspace data. The shell describes local-only execution; individual simulator runs retain explicit simulation labels. Existing keyboard, text-size, mobile, and exact-document review behavior remains required.
+
+## 14. Sources, retrieval, and curated memory increment
+
+Keep the established ink/teal visual system. Knowledge & memory becomes operative, with Sources, Retrieval test, and Memory tabs. Sources accept pasted or picked `.md`/`.txt` text up to 64 KiB. Show current revision, actual indexing status/error, active searchable revision, and source detail as escaped text. Updating creates a new revision; loading/failure retains unsaved input. Deletion is deliberate and discloses removal from active retrieval plus linked memories, while historical run evidence/artifacts remain retained.
+
+Retrieval test searches only selected sources and memories. Show actual excerpts, stable citation labels, source revision and line/chunk identity; no confidence percentages. No result is a visible insufficiency. Editing/deleting sources invalidates displayed test results. Memory is explicitly saved/edited/deleted by the operator, confirmed and workspace-scoped; conversations do not become memory automatically. Show provenance and expiry.
+
+New missions keep No retrieval as the compatibility default. Local Ollama can opt into Require workspace evidence and select ready sources/confirmed memories. Required evidence that becomes unavailable or irrelevant stops generation with a concrete reason. Run review presents the exact retained evidence snapshot and citation identities beside the generated document. Citation focus must not overwrite the hash route. Mobile gets a fifth Knowledge tab, preserving Models; roadmap copy must distinguish operative knowledge from planned connectors and agent memory automation.
+
+## 15. Owner setup and authenticated clients
+
+Before workspace content loads, read minimal authentication state. An empty authenticated installation shows a one-time owner setup form requiring the private setup key, name, email, and password; no public registration or email verification claim. A configured installation shows sign-in. Keep entered non-secret fields after failure, clear password on completed sign-in/setup, and show actionable session/network errors. Password/setup secrets never appear in URLs or logs. Setup success leads to normal sign-in, not a silently exposed session token.
+
+The shell shows the actual owner and sign-out when authenticated, or an explicit local development/no-sign-in badge when bypassed. Session expiry returns to sign-in and stops protected polling; it must not silently switch to development mode. Web uses same-origin cookies. Native uses the maintained Expo SecureStore integration and the same run/evidence/approval contracts, with one clear connection screen and no claim of physical-device deployment before that gate passes.

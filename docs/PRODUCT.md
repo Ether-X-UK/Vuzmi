@@ -35,7 +35,7 @@ The first implementation slice is smaller: create a run, generate an explicitly 
 
 - No additional cost beyond the founder's existing GPT subscription. Paid provider API calls, paid hosting, paid build services, and new subscriptions are disabled by default.
 - The MacBook M5 with local Ollama is the confirmed testbed. Later deployment uses existing CPU-only infrastructure with ample CPU/RAM; no datacenter GPU is assumed. Capacity is not a current blocker.
-- Ollama is installed locally, but its service was not running at the initial environment check. Local model manifests include `gemma4:26b-a4b-it-qat` and `hf.co/unsloth/Qwen3.6-27B-GGUF:IQ4_XS`; manifest presence is not a successful load/inference test. Start validation with existing models where suitable; downloading additional models is explicitly authorized when needed, within available hardware and the zero-added-cost constraint. Docker did not have a running daemon. These runtime prerequisites are not complete yet.
+- The MacBook M5 testbed now has verified local generation with `qwen3.5:4b` and embeddings with `embeddinggemma:300m`, a private native PostgreSQL16/pgvector database, and a dedicated Vuzmi cloud-disabled Ollama daemon on11435. The user’s usual11434 service is untouched. No Docker daemon or hosted service is required for this native package. These are observed local checks, not a CPU-server benchmark.
 - Existing infrastructure staff accept resource-request issues in [XeoNote/Infrastructure-](https://github.com/XeoNote/Infrastructure-/). Repository access and the high-level deployment documentation were verified on 4 November 2026. [INFRASTRUCTURE_REQUEST.md](INFRASTRUCTURE_REQUEST.md) contains a draft only.
 - `vuzmi.com` DNS is managed through Cloudflare. DNS edits and public exposure are deployment work, not assumed completed setup.
 - Any eligible subscription API credits or supported subscription sign-in capability must be verified against current official documentation and this account's eligibility before use. An existing chat subscription is not treated as general API permission or an available API budget.
@@ -55,17 +55,17 @@ The first implementation slice is smaller: create a run, generate an explicitly 
 
 The alpha is a local or privately self-hosted, single-organization system. It is intended for evaluation with owned documents and test requests. It is not a claim of production SaaS readiness.
 
-| Included in the alpha plan | Deferred until the foundation passes its gates |
-| --- | --- |
-| Web onboarding and a coherent run/approval interface | Broad connector marketplace and visual workflow builder |
-| A persistent generic workflow/run/event model | Unrestricted autonomous agents or arbitrary host command execution |
-| Deterministic sandbox workflow, visibly identified as simulation | Production deployments and automatic changes to customer systems |
-| Real Ollama path; OpenAI and Claude adapter contracts/configuration, disabled by default | Paid provider calls, learned model routing, or claims of optimal model selection |
-| Explicit policy-based model routing and safe failure behavior | Public multi-tenant hosting and enterprise identity controls |
-| Small-document ingestion, retrieval, revision-aware citations, and deletion | Large-scale document sync, OCR, extensive file formats, and advanced knowledge graphs |
-| Human-reviewed founder release package and durable local outbox | End-to-end autonomous development, live marketing campaigns, cold outbound sales, and automated spend |
-| A minimal iOS companion for runs and approvals, if its build gate passes | Full web/iOS feature parity, App Store acceptance, and push infrastructure |
-| Deployable backend packaging, health checks, migration instructions, and essential tests; local runtime prerequisites resolved explicitly | Public billing, subscriptions, tax handling, commercial SLA commitments, and any paid infrastructure |
+| Included in the alpha plan                                                                                                                | Deferred until the foundation passes its gates                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Web onboarding and a coherent run/approval interface                                                                                      | Broad connector marketplace and visual workflow builder                                               |
+| A persistent generic workflow/run/event model                                                                                             | Unrestricted autonomous agents or arbitrary host command execution                                    |
+| Deterministic sandbox workflow, visibly identified as simulation                                                                          | Production deployments and automatic changes to customer systems                                      |
+| Real Ollama path; OpenAI and Claude adapter contracts/configuration, disabled by default                                                  | Paid provider calls, learned model routing, or claims of optimal model selection                      |
+| Explicit policy-based model routing and safe failure behavior                                                                             | Public multi-tenant hosting and enterprise identity controls                                          |
+| Small-document ingestion, retrieval, revision-aware citations, and deletion                                                               | Large-scale document sync, OCR, extensive file formats, and advanced knowledge graphs                 |
+| Human-reviewed founder release package and durable local outbox                                                                           | End-to-end autonomous development, live marketing campaigns, cold outbound sales, and automated spend |
+| A minimal iOS companion for runs and approvals, if its build gate passes                                                                  | Full web/iOS feature parity, App Store acceptance, and push infrastructure                            |
+| Deployable backend packaging, health checks, migration instructions, and essential tests; local runtime prerequisites resolved explicitly | Public billing, subscriptions, tax handling, commercial SLA commitments, and any paid infrastructure  |
 
 Provider compatibility is verified per configured adapter and recorded in a test matrix. A mock or unavailable credential must not be reported as a completed live-provider test.
 
@@ -73,17 +73,17 @@ Provider compatibility is verified per configured adapter and recorded in a test
 
 The interface should make these areas feel like one product while indicating availability accurately.
 
-| Area | Alpha behavior | Full product direction |
-| --- | --- | --- |
-| Overview | Runs awaiting attention, approvals, basic activity | Business health, exceptions, goals, outcomes, and capacity |
-| Workflows | Founder release mission and explicitly labelled sandbox slice | Compose, schedule, trigger, evaluate, and reuse workflows |
-| Agents and models | Provider configuration, role/task settings, route reason | Specialist agents, capability registry, evaluated selection, bounded autonomy |
-| Knowledge and memory | Upload supported documents, search evidence, inspect provenance | Connector sync, lifecycle controls, curated memory, feedback and retrieval evaluation |
-| Support | Clearly marked roadmap area | Grounded support drafts, inbox integrations, handoffs, escalation, service metrics |
+| Area                   | Alpha behavior                                                       | Full product direction                                                                                               |
+| ---------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Overview               | Runs awaiting attention, approvals, basic activity                   | Business health, exceptions, goals, outcomes, and capacity                                                           |
+| Workflows              | Founder release mission and explicitly labelled sandbox slice        | Compose, schedule, trigger, evaluate, and reuse workflows                                                            |
+| Agents and models      | Provider configuration, role/task settings, route reason             | Specialist agents, capability registry, evaluated selection, bounded autonomy                                        |
+| Knowledge and memory   | Upload supported documents, search evidence, inspect provenance      | Connector sync, lifecycle controls, curated memory, feedback and retrieval evaluation                                |
+| Support                | Clearly marked roadmap area                                          | Grounded support drafts, inbox integrations, handoffs, escalation, service metrics                                   |
 | Development and IT ops | Release planning/readiness artifacts; planned sandbox execution lane | Issue-to-change workflows, isolated execution, CI, review, deployments, incident response, infrastructure operations |
-| Marketing | Clearly marked roadmap area | Campaign planning, asset generation, scheduling, measurement, approved publication |
-| Sales | Clearly marked roadmap area | CRM workflows, qualification, follow-up, forecasting, approved outreach |
-| Settings and audit | Workspace, providers, policy, runs, and events | Roles, connectors, retention, usage, billing, and operational controls |
+| Marketing              | Clearly marked roadmap area                                          | Campaign planning, asset generation, scheduling, measurement, approved publication                                   |
+| Sales                  | Clearly marked roadmap area                                          | CRM workflows, qualification, follow-up, forecasting, approved outreach                                              |
+| Settings and audit     | Workspace, providers, policy, runs, and events                       | Roles, connectors, retention, usage, billing, and operational controls                                               |
 
 A roadmap area must not display invented revenue, customers, completed runs, or connected integrations as live facts. Demo fixtures must be labelled and separable from operator data.
 
@@ -136,7 +136,7 @@ Real Ollama execution is required for the complete day-seven flow. OpenAI/Claude
 
 ## Path to the business
 
-The initial SaaS offer should sell managed operation, convenient onboarding, reliability, updates, and support. A self-hosted operator should be able to use the open-source application without relying on a hidden proprietary backend. The final license, pricing, and support commitments remain founder decisions. Current implementation and validation must stay within existing hardware and the zero-additional-cost constraint; commercialization is not authorization to start spending.
+The initial SaaS offer should sell managed operation, convenient onboarding, reliability, updates, and support. A self-hosted operator should be able to use the open-source application without relying on a hidden proprietary backend. The founder selected AGPL-3.0-only; pricing and support commitments remain founder decisions. Current implementation and validation must stay within existing hardware and the zero-additional-cost constraint; commercialization is not authorization to start spending.
 
 Commercialization progresses through evidence-based gates:
 
@@ -151,8 +151,8 @@ The sales automation loop is eventually: permitted lead source → qualification
 ## Remaining decisions
 
 - Choose a concrete resource allocation and deployment handoff when local readiness is demonstrated; the infrastructure repository and ample CPU/RAM are confirmed.
-- Verify local model load, capability, and latency on the M5; download an additional suitable model when needed without added service cost.
+- Validate later CPU-server capacity and representative workflow quality; the local M5 generation and embedding smoke checks have passed.
 - Whether this account has any verified eligible API credits or subscription sign-in integration; zero added cost remains mandatory.
-- License direction and requirements for the future hosted business.
+- Public source repository destination and hosted pricing/support commitments; AGPL-3.0-only is selected.
 - Required first external integration, if any; the alpha uses a local change brief and artifact outbox.
 - iOS expectations: a native Expo companion is planned; public distribution is outside the alpha promise.
