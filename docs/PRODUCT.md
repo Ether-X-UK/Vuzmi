@@ -18,10 +18,10 @@ The initial promise is: **turn a founder's change brief into a traceable, knowle
 
 A single reliable workflow provides a stronger foundation than several disconnected demos. The first complete alpha workflow is the founder release mission:
 
-1. A founder enters a goal or change brief and adds a small, owned collection of product/release documents. The default fixture prepares Vuzmi's own alpha release unless the founder chooses another product.
+1. A founder enters a goal or change brief and adds a small, owned collection of product/release documents. The confirmed first workflow prepares Vuzmi's own alpha release and launch assets.
 2. The workflow uses a visible local-only routing policy to select an available Ollama model.
 3. Retrieval finds permitted source passages and records their revisions.
-4. A real model call produces a plan and concrete release readiness artifacts: scope, acceptance checklist, release notes, risks, and a deployment handoff draft.
+4. A real model call produces a plan and concrete release readiness artifacts: scope, acceptance checklist, release notes, risks, deployment handoff, and draft launch assets.
 5. Claims distinguish known evidence, proposed work, missing information, and unverified readiness; the model cannot mark tests as passed without evidence.
 6. A person reviews the brief, evidence, artifacts, and exact intended local action.
 7. Approval produces a durable local outbox/artifact package and completion record.
@@ -34,9 +34,9 @@ The first implementation slice is smaller: create a run, generate an explicitly 
 ## Confirmed operating constraints
 
 - No additional cost beyond the founder's existing GPT subscription. Paid provider API calls, paid hosting, paid build services, and new subscriptions are disabled by default.
-- Existing hardware is the intended deployment environment. The current machine is the local testbed until deployment readiness is demonstrated.
-- Ollama is installed locally, but its service was not running at the initial environment check. Local model manifests include `gemma4:26b-a4b-it-qat` and `hf.co/unsloth/Qwen3.6-27B-GGUF:IQ4_XS`; manifest presence is not a successful load/inference test. Use existing local model assets and do not download models. Docker did not have a running daemon. These runtime prerequisites are not complete yet.
-- Existing infrastructure staff accept resource-request issues in their repository; the repository URL is still needed before posting. [INFRASTRUCTURE_REQUEST.md](INFRASTRUCTURE_REQUEST.md) contains a draft only.
+- The MacBook M5 with local Ollama is the confirmed testbed. Later deployment uses existing CPU-only infrastructure with ample CPU/RAM; no datacenter GPU is assumed. Capacity is not a current blocker.
+- Ollama is installed locally, but its service was not running at the initial environment check. Local model manifests include `gemma4:26b-a4b-it-qat` and `hf.co/unsloth/Qwen3.6-27B-GGUF:IQ4_XS`; manifest presence is not a successful load/inference test. Start validation with existing models where suitable; downloading additional models is explicitly authorized when needed, within available hardware and the zero-added-cost constraint. Docker did not have a running daemon. These runtime prerequisites are not complete yet.
+- Existing infrastructure staff accept resource-request issues in [XeoNote/Infrastructure-](https://github.com/XeoNote/Infrastructure-/). Repository access and the high-level deployment documentation were verified on 4 November 2026. [INFRASTRUCTURE_REQUEST.md](INFRASTRUCTURE_REQUEST.md) contains a draft only.
 - `vuzmi.com` DNS is managed through Cloudflare. DNS edits and public exposure are deployment work, not assumed completed setup.
 - Any eligible subscription API credits or supported subscription sign-in capability must be verified against current official documentation and this account's eligibility before use. An existing chat subscription is not treated as general API permission or an available API budget.
 - Languages are open; the TypeScript/Expo stack is a provisional implementation choice rather than a founder-imposed requirement.
@@ -150,8 +150,8 @@ The sales automation loop is eventually: permitted lead source → qualification
 
 ## Remaining decisions
 
-- Exact existing-host resources, supported runtime, and the infrastructure team's request-repository URL.
-- Which existing local model fits the available machine and can actually load; no model download or GPU purchase is authorized.
+- Choose a concrete resource allocation and deployment handoff when local readiness is demonstrated; the infrastructure repository and ample CPU/RAM are confirmed.
+- Verify local model load, capability, and latency on the M5; download an additional suitable model when needed without added service cost.
 - Whether this account has any verified eligible API credits or subscription sign-in integration; zero added cost remains mandatory.
 - License direction and requirements for the future hosted business.
 - Required first external integration, if any; the alpha uses a local change brief and artifact outbox.

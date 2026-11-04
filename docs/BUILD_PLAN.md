@@ -18,14 +18,14 @@ Implementation can begin once these artifacts are concrete. No additional approv
 - Confirmed first user: a SaaS founder building, operating, marketing, and selling a software business; Vuzmi is its own initial customer.
 - Primary complete workflow: founder goal/change brief → plan and retrieved product knowledge → release readiness artifacts → exact-package approval → durable local outbox.
 - The first code slice uses a clearly labelled deterministic sandbox plan; it does not claim model reasoning, RAG, or customer delivery.
-- The default first-run fixture prepares Vuzmi's own alpha release unless the founder supplies another product brief.
+- The confirmed first workflow prepares Vuzmi's own alpha release and launch assets.
 - Provisional stack: TypeScript; React and Vite web; Fastify API; a separate worker; PostgreSQL with pgvector and pg-boss; Expo for the iOS companion.
 - Initial code packages are `apps/web`, `apps/api`, and `packages/core` for shared contracts and pure rules. Add the worker, mobile client, or other infrastructure packages when they have a concrete implementation; do not scaffold empty packages for the whole future architecture.
 - Backend/dependency packaging must be runnable on existing hardware; Docker is a planned packaging option, but no running daemon was available at the initial check. Web and iOS share API contracts and design tokens where practical.
-- Ollama is installed but its service was not initially running. Existing local model manifests include `gemma4:26b-a4b-it-qat` and `hf.co/unsloth/Qwen3.6-27B-GGUF:IQ4_XS`; actual load/inference remains unverified. Use existing assets and do not download models. Resolving the local runtime and proving a real Ollama call is on the critical path.
+- Ollama is installed but its service was not initially running. Existing local model manifests include `gemma4:26b-a4b-it-qat` and `hf.co/unsloth/Qwen3.6-27B-GGUF:IQ4_XS`; actual load/inference remains unverified. The testbed is the MacBook M5. Use suitable existing assets first and download additional models when needed; the founder explicitly permits this. Resolving the local runtime and proving a real Ollama call is on the critical path.
 - Ollama, OpenAI, and Claude use provider adapters; policy-based routing precedes optimization. Paid API providers are disabled by default.
 - ZERO additional costs beyond the existing GPT subscription. Use existing hardware and local tooling; no paid API calls, hosted builds, new subscriptions, or paid infrastructure. Verify any eligible subscription credits/sign-in capability before relying on it.
-- Existing infrastructure staff accept resource-request issues. [INFRASTRUCTURE_REQUEST.md](INFRASTRUCTURE_REQUEST.md) is an unposted issue draft pending the repository URL and host details. `vuzmi.com` DNS is on Cloudflare; public exposure is not assumed authorized or completed.
+- Existing infrastructure staff accept resource-request issues. [INFRASTRUCTURE_REQUEST.md](INFRASTRUCTURE_REQUEST.md) is an unposted issue draft targeting [XeoNote/Infrastructure-](https://github.com/XeoNote/Infrastructure-/). The later estate is CPU-only with ample CPU/RAM; capacity is not a blocker. Local Mac development precedes the deployment handoff. `vuzmi.com` DNS is on Cloudflare; public exposure is not assumed authorized or completed.
 - No assumed license choice, public launch, billing integration, or App Store plan.
 
 The architecture document owns final technical decisions and their tradeoffs. Stack revisions should update this plan and implementation contracts together.
@@ -61,10 +61,10 @@ Dates are a working schedule. Acceptance gates determine readiness; a missed gat
 
 ### Foundation and installation
 
-- [ ] Architecture, product boundary, and primary UI flows are recorded before implementation.
+- [x] Architecture, product boundary, and primary UI flows are recorded before implementation.
 - [ ] Workspace packages build and type-check with reproducible dependency installation.
 - [ ] Backend dependencies start through documented self-host commands.
-- [ ] The local Ollama service is running/reachable and an existing suitable model loads successfully without a new model download.
+- [ ] The local Ollama service is running/reachable and a suitable model loads successfully within existing hardware and the zero-additional-cost constraint.
 - [ ] The required database/runtime works on the local testbed despite the initially unavailable Docker daemon; any infrastructure dependency has an identified owner.
 - [ ] All exercised paths add no service cost, and paid provider routes are disabled by default.
 - [ ] Migrations work on a clean database and preserve existing run data when applied again.
@@ -192,9 +192,9 @@ The product goal is extensive automation. The release process must continue to d
 | --- | --- | --- |
 | First buyer and highest-value workflow | Confirmed: SaaS founder; build → operate → market → sell. First mission is founder release readiness. | Workflow copy, data fixtures, artifacts, and priority modules |
 | Definition of success in one week | Confirmed: polished deployable alpha with one reliable end-to-end flow. | Real Ollama inference plus concrete approved local output, packaging, and release evidence |
-| Models, machine, hosting, and budget | Confirmed: existing hardware, local testbed, zero extra cost. Need exact host capacity/model inventory and any verified eligible API access. | Runtime prerequisites, Ollama model selection, infrastructure issue, and provider gating |
+| Models, machine, hosting, and budget | Confirmed: existing hardware, local testbed, zero extra cost. MacBook M5 + local Ollama now; CPU-only existing infrastructure later. Model downloads are allowed. Verify models and any eligible API access. | Runtime prerequisites, Ollama model selection, infrastructure issue, and provider gating |
 | License/commercial constraints | Full code open source; license undecided | Repository license, distribution terms, and hosted-service positioning |
-| Infrastructure request repository | Required before posting; existing staff manage resources and Cloudflare DNS for `vuzmi.com`. | Draft remains local until a concrete destination and authorized request are available |
+| Infrastructure request repository | Confirmed: `XeoNote/Infrastructure-`; existing staff manage resources and Cloudflare DNS for `vuzmi.com`. | Draft remains local until a concrete destination and authorized request are available |
 | First external integration | Local change brief and artifact outbox; later integration undecided | Connector implementation and authorization tests |
 | iOS distribution expectation | Expo companion with local tooling; no paid build/App Store plan assumed | Actual local build availability and companion scope |
 

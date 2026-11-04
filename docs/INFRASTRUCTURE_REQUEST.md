@@ -1,6 +1,6 @@
 # Infrastructure request issue draft
 
-Status: draft only, 4 November 2026. No external issue has been posted. The infrastructure repository URL, target host details, and owner-selected capacity are outstanding.
+Status: draft only, 4 November 2026. No external issue has been posted. Target repository: [XeoNote/Infrastructure-](https://github.com/XeoNote/Infrastructure-/). The founder confirms ample CPU/RAM and no datacenter GPU. Local development remains on the MacBook M5; no resource request is needed to start.
 
 Suggested issue title: **Prepare existing infrastructure for a zero-cost Vuzmi self-hosted alpha**
 
@@ -8,18 +8,18 @@ Suggested issue title: **Prepare existing infrastructure for a zero-cost Vuzmi s
 
 Vuzmi is an open-source business orchestration platform being developed toward a polished deployable alpha by 10 November 2026. The first complete workflow uses local Ollama inference to turn a founder's change brief and owned product knowledge into a reviewed release readiness package. No production deployment or external customer send is part of that workflow.
 
-The current development machine remains the testbed until deployment readiness is demonstrated. We need an existing-host deployment target and an operational handoff. There must be **no additional infrastructure, API, subscription, certificate, or build-service cost**. If existing capacity is unavailable, please report the constraint rather than purchase or provision a paid resource.
+The MacBook M5 and local Ollama remain the testbed until deployment readiness is demonstrated. Model downloads are permitted when needed. The later target is existing CPU-only infrastructure; capacity is not a current blocker. We need an existing-host deployment target and an operational handoff. There must be **no additional infrastructure, API, subscription, certificate, or build-service cost**. If existing capacity is unavailable, please report the constraint rather than purchase or provision a paid resource.
 
-At the initial environment check, Ollama was installed locally but not running, and no running Docker daemon was available. Local model manifests include `gemma4:26b-a4b-it-qat` and `hf.co/unsloth/Qwen3.6-27B-GGUF:IQ4_XS`; loading and inference remain unverified. Use existing model assets and do not download models. Runtime availability must be resolved or replaced with an agreed existing approach; it is not a completed setup step.
+At the initial environment check, Ollama was installed locally but not running, and no running Docker daemon was available. Local model manifests include `gemma4:26b-a4b-it-qat` and `hf.co/unsloth/Qwen3.6-27B-GGUF:IQ4_XS`; loading and inference remain unverified. Start with suitable existing models and download additional models when needed within the zero-added-cost constraint. Runtime availability must be resolved or replaced with an agreed existing approach; it is not a completed setup step.
 
-## Owner decisions requested
+## Deployment handoff fields for the infrastructure team
 
 | Topic | Please identify or choose | Constraint / acceptance |
 | --- | --- | --- |
-| Existing target host | Host owner, architecture, OS, available CPU/RAM, free disk, and allowed workload window | Use already available hardware; no fixed GPU purchase/request is assumed |
+| Existing target host | Assign a target VM/service owner and the existing standard OS/runtime when deploy-ready | Use the existing CPU-only estate; ample CPU/RAM is confirmed and no GPU purchase is needed |
 | Runtime | Existing supported container runtime/daemon, or approved native process/service approach | Must support the agreed API, worker, PostgreSQL/pgvector, and local model arrangement without new paid services |
-| Initial resource allocation | A safe CPU/RAM/disk allocation based on measured host headroom and the chosen existing Ollama model | Application and database budgets are distinct from model memory; preserve capacity for existing workloads |
-| Ollama placement | Local on the application host or another existing trusted machine; installed models and current resource usage | Keep inference private; use existing model assets and measure fit/latency. No new model download is authorized |
+| Initial resource allocation | Allocate application/database resources from existing capacity using the measured local workload | Application and database budgets are distinct from model memory; preserve capacity for existing workloads |
+| Ollama placement | Local on the application host or another existing trusted machine; installed models and current resource usage | Keep inference private; start with existing assets and measure fit/latency. Additional models must fit available capacity and the zero-cost constraint |
 | Persistence | Existing volume/location for PostgreSQL, source documents, artifacts, and model files | Survives restarts; permissions restrict access to the service owner |
 | Backups and restore | Existing backup destination/process, retention, restore owner, and a safe restore-test location | No paid backup service; a restore test is required before hosted beta |
 | Network boundary | Private access method, reverse proxy, TLS approach, allowed inbound/outbound paths, and admin access | Ollama/database stay private; begin with local/private exposure rather than an automatic public endpoint |
@@ -49,7 +49,7 @@ The application team will supply the actual service configuration, private ports
 
 ## Deployment gates
 
-- [ ] Repository and target infrastructure owner are identified.
+- [ ] Repository is identified; a concrete resource issue can be prepared for the infrastructure team when deploy-ready.
 - [ ] An existing no-additional-cost host/runtime and local inference path are available.
 - [ ] Private deployment starts with the documented environment and clean database migration.
 - [ ] A real Ollama founder-release run produces a reviewed, durable local artifact package.

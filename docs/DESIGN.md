@@ -8,9 +8,9 @@ Vuzmi is a business control plane for SaaS founders: **build → operate → mar
 
 The immediate target is a polished private alpha running on existing local hardware, with no additional spend. Public hosting at `vuzmi.com` will be coordinated with the infrastructure team later. The interface must not imply that the domain is deployed, billing works, or business services are connected.
 
-The provisional first mission is Vuzmi's own release preparation. The first implementation creates a run, produces a deterministic local plan, requests review, and records an approved local artifact with an event history. This is an explicitly labelled simulation of an orchestration workflow. It does not call a model, inspect a repository, run tests, deploy software, contact customers, or publish anything. Later verified capabilities replace the simulator behind the same execution contract.
+The confirmed first mission is Vuzmi's own alpha release preparation and launch assets. The first implementation creates a run, produces a deterministic local plan, requests review, and records an approved local artifact with an event history. This is an explicitly labelled simulation of an orchestration workflow. It does not call a model, inspect a repository, run tests, deploy software, contact customers, or publish anything. Later verified capabilities replace the simulator behind the same execution contract.
 
-The subsequent knowledge-grounded support workflow adds real configured providers, retrieval, citations, and a reviewed local outbox. Saving an outbox item does not mean a response was sent.
+The complete alpha release-preparation mission adds real local inference, retrieved product knowledge, citations, and a concrete release package. The later support template reuses those foundations with a reviewed local outbox. Saving an outbox item does not mean a response was sent.
 
 ### Design priorities
 
