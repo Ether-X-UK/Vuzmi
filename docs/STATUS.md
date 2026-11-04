@@ -1,42 +1,45 @@
 # Delivery status
 
-Updated 4 November 2026. This file describes delivered code; the architecture and build plan describe the larger target.
+Updated 4 November 2026. This file describes delivered code; the architecture and build plan describe the larger target. The founder accepted the initial UI direction as a starting point.
 
-## First foundation slice
+## Implemented local foundation
 
-- Product definition, full target architecture, primary-source research, seven-day build plan, UI design, and an infrastructure issue draft are recorded.
-- A TypeScript npm workspace contains the shared contracts/domain rules, Fastify API, and React/Vite web client.
-- Mission creation prepares an explicitly labelled deterministic release brief. It does not run a model or retrieve knowledge.
-- Decisions bind to the proposal's SHA-256 fingerprint and revision. Approval saves a local artifact; rejection cancels without one.
-- Identical decision replays return the existing outcome. Conflicting or stale decisions fail.
-- The API serializes writes to a private local JSON file and refuses corrupt or inconsistent state at startup. It is a single-process development adapter.
-- The API binds only to loopback and checks browser origins. User authentication and network deployment are not implemented.
+- Product definition, full target architecture, seven-day build plan, primary-source research, desktop/mobile UI design, and an unposted infrastructure issue draft are recorded.
+- The TypeScript workspace contains React/Vite web, Fastify API, separate worker, shared domain rules, native Ollama transport, and PostgreSQL/pg-boss runtime packages.
+- Model control discovers eligible installed local models and reports actual database, worker, and Ollama readiness independently of saved workspace data.
+- Missions explicitly select Simulation or Local Ollama. Simulation is the default. Live requests require PostgreSQL, a ready worker, and an eligible installed model; there is no cloud or simulation fallback.
+- Local Ollama generation creates a draft with an unverified-output provenance warning. Model identity and observed usage are recorded; absent usage remains unknown. No retrieval, repository inspection, tools, code changes, deployment, or messages occur.
+- PostgreSQL persists aggregates, append-only events, decisions, and artifacts. Run creation and queue insertion share a transaction; approval commits the exact reviewed artifact atomically.
+- Attempts use revision/identity fences, bounded retries, queue and shutdown cancellation signals, worker heartbeat, and exhausted-job reconciliation. At-least-once delivery may repeat inference; stale output cannot replace the accepted draft.
+- Approval binds to the proposal's SHA-256 fingerprint and revision. Identical replay returns the existing outcome; stale or conflicting decisions fail. Rejection creates no artifact.
+- A file-backed single-process simulation remains available for UI development without PostgreSQL or Ollama. It is separate from the PostgreSQL history.
+- Local helpers own a private native PostgreSQL cluster and a dedicated cloud-disabled Ollama process. The user's existing Ollama service on 11434 is untouched.
+- The API remains loopback-only with host/origin checks. Authentication and network deployment are incomplete.
 
 ## Verification
 
 | Check | Result |
 | --- | --- |
-| Domain tests | 5 passed |
-| API integration tests | 10 passed |
-| TypeScript checks | Passed for the final integrated source |
-| Browser workflow and visual review | Passed: desktop approval and reload, mobile rejection and exact-document access, no horizontal overflow at 390px |
-| Web production build | Passed after final accessibility fixes (`npm run check`) |
-| Live provider calls | None performed |
-| PostgreSQL/queue/restore | Not implemented or verified |
+| Domain/API/provider fixture tests | 39 passed, no failures or skips (`npm test`) |
+| Real PostgreSQL/pg-boss integration | 13 passed, no failures or skips (`npm run test:postgres`; 12 scenarios plus wrapper) |
+| TypeScript and web production build | Passed (`npm run check`) |
+| Native local dependency bootstrap | Passed with PostgreSQL 16.15 and Ollama 0.40.14 on the M5 |
+| Real local generation | `qwen3.5:4b`: 343 input / 1,114 output tokens; provider-reported duration 38.75 seconds for one smoke mission |
+| Browser local Ollama flow | Created → queued/running → exact document → approve → saved artifact; download bytes match both proposal and persisted artifact |
+| Full local service restart | PostgreSQL, Ollama, API, worker, and web restarted; the approved bytes and single artifact event persisted and runtime returned ready |
+| Current mobile/desktop checks | Live review at 1440px; Model control and live-mission dialog at 390px with no horizontal overflow; mobile Models navigation works |
+| Prior simulation browser coverage | Desktop approval/reload, mobile rejection, exact-document access, keyboard skip navigation, no horizontal overflow at 390px/769px |
+| Backup/restore | Not implemented or verified |
 | Native iOS build | Not implemented or verified |
 
-API evidence covers concurrent writes, approved/rejected decisions, stale fingerprint/revision, idempotent decision replay, restart persistence, corruption refusal, origin/host guards, and disk-write failure without false completion.
+The live smoke mission is retained in ignored local PostgreSQL data, not seeded or committed into the repository. Its generated document is an unverified draft, not a declaration of release readiness. The timing is one observed run, not a benchmark. A single smaller model was downloaded under the founder's authorization; no paid model route was used.
 
-## Next mandatory milestone
+Database evidence covers atomic run+queue rollback, immutable event enforcement, concurrent approvals across repository instances, workspace-qualified access, reconnect persistence, recovery, duplicate jobs, worker heartbeat, bounded failures, exhausted-job reconciliation, migration checksum refusal, and corrupt-state detection. Cancellation regressions deliberately ignore abort signals in the fake generator and prove obsolete results cannot publish after a lost lease or shutdown.
 
-1. Verify a suitable existing Ollama model on local hardware, with cloud calls disabled.
-2. Replace the local file adapter with PostgreSQL-backed execution and migrations; introduce a worker with tested recovery.
-3. Add source ingestion, retrieval with real citations, and explicit curated memory.
-4. Complete the founder release-preparation workflow through real local inference and a concrete reviewed package.
-5. Add authenticated private deployment and the native iOS approval companion, then run the packaging and restore gates.
+## Next milestone
 
-OpenAI and Claude compatibility, production automation, client support, marketing/sales connectors, public SaaS billing, and automated selling remain roadmap work. No source repository has been published, infrastructure issue posted, DNS changed, or paid service enabled. The licence remains a founder decision.
+1. Ingest versioned owned product documents; add source-scoped retrieval with real citations, deletion, and explicit curated memory.
+2. Complete the founder release package and durable local outbox using retrieved evidence; keep proposed work distinct from verified outcomes.
+3. Add authenticated private deployment, the native iOS approval companion, packaging, and backup/restore gates.
 
-Confirmed delivery environment: MacBook M5 with local Ollama; new models may be downloaded when needed. Later CPU-only infrastructure has ample capacity and requests target `XeoNote/Infrastructure-`. No deployment resources are needed for the current local slice.
-
-Browser QA used an isolated temporary workspace. The repository has no seeded runs or committed test data. Keyboard skip navigation preserves the run URL, compact navigation has accessible names, and 390px/769px layouts were checked for horizontal overflow. Native iOS remains a separate milestone.
+OpenAI and Claude are not implemented or live-verified. Public SaaS, tenant isolation, billing, automated development/IT execution, client support, marketing/sales connectors, and automated selling remain roadmap work. No source repository has been published, infrastructure issue posted, DNS changed, or paid service enabled. The licence remains a founder decision.

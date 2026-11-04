@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { storedStateSchema } from "@vuzmi/core";
+import { parseRunIntegrity, storedStateSchema } from "@vuzmi/core";
 import type { StoredState } from "@vuzmi/core";
 
 export const STATE_FILE_NAME = "workspace.json";
@@ -24,36 +24,13 @@ function validateState(value: unknown): StoredState {
         "The local state file contains an invalid event sequence. Refusing to overwrite it.",
       );
     }
-    const action = {
-      kind: run.proposal.kind,
-      destination: run.proposal.destination,
-      content: run.proposal.content,
-    };
-    const fingerprint = createHash("sha256")
-      .update(JSON.stringify(action))
-      .digest("hex");
-    const invalidDecision =
-      run.decision !== undefined &&
-      (run.decision.fingerprint !== fingerprint ||
-        run.decision.revision !== run.revision - 1);
-    const invalidWaiting =
-      run.status === "waiting_approval" &&
-      (run.decision !== undefined || run.artifact !== undefined);
-    const invalidCompleted =
-      run.status === "completed" &&
-      (run.decision?.decision !== "approve" ||
-        run.artifact === undefined ||
-        run.artifact.content !== run.proposal.content);
-    const invalidCancelled =
-      run.status === "cancelled" &&
-      (run.decision?.decision !== "reject" || run.artifact !== undefined);
-    if (
-      run.proposal.fingerprint !== fingerprint ||
-      invalidDecision ||
-      invalidWaiting ||
-      invalidCompleted ||
-      invalidCancelled
-    ) {
+    try {
+      parseRunIntegrity(run, (value) =>
+        createHash("sha256").update(value).digest("hex"),
+      );
+      if (run.mode !== "simulation")
+        throw new Error("Live execution requires PostgreSQL.");
+    } catch {
       throw new Error(
         "The local state file contains inconsistent approval or artifact data. Refusing to overwrite it.",
       );

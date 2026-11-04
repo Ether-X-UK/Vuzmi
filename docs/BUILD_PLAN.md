@@ -1,6 +1,6 @@
 # Vuzmi build plan
 
-Status: planned delivery baseline, 4 November 2026. All feature checkboxes below start unverified. Creating this plan does not mean the software exists.
+Status: delivery baseline, 4 November 2026. Checked gates have evidence in [STATUS.md](STATUS.md); unchecked gates remain incomplete.
 
 Delivery window: Wednesday 4 November through Tuesday 10 November 2026, Europe/London. The target is a working, self-hosted alpha with a coherent interface and one reliable end-to-end workflow. Public SaaS readiness, billing, and App Store distribution are separate milestones.
 
@@ -22,7 +22,7 @@ Implementation can begin once these artifacts are concrete. No additional approv
 - Provisional stack: TypeScript; React and Vite web; Fastify API; a separate worker; PostgreSQL with pgvector and pg-boss; Expo for the iOS companion.
 - Initial code packages are `apps/web`, `apps/api`, and `packages/core` for shared contracts and pure rules. Add the worker, mobile client, or other infrastructure packages when they have a concrete implementation; do not scaffold empty packages for the whole future architecture.
 - Backend/dependency packaging must be runnable on existing hardware; Docker is a planned packaging option, but no running daemon was available at the initial check. Web and iOS share API contracts and design tokens where practical.
-- Ollama is installed but its service was not initially running. Existing local model manifests include `gemma4:26b-a4b-it-qat` and `hf.co/unsloth/Qwen3.6-27B-GGUF:IQ4_XS`; actual load/inference remains unverified. The testbed is the MacBook M5. Use suitable existing assets first and download additional models when needed; the founder explicitly permits this. Resolving the local runtime and proving a real Ollama call is on the critical path.
+- Ollama was subsequently verified running; initial sandboxed network checks did not establish readiness. The MacBook M5 now runs a dedicated Vuzmi-owned cloud-disabled daemon on 11435, leaving the user's service on 11434 untouched. Existing large models were discovered; the founder-authorized `qwen3.5:4b` download now provides a smaller verified local draft model. Native PostgreSQL 16 supplies the local database without Docker.
 - Ollama, OpenAI, and Claude use provider adapters; policy-based routing precedes optimization. Paid API providers are disabled by default.
 - ZERO additional costs beyond the existing GPT subscription. Use existing hardware and local tooling; no paid API calls, hosted builds, new subscriptions, or paid infrastructure. Verify any eligible subscription credits/sign-in capability before relying on it.
 - Existing infrastructure staff accept resource-request issues. [INFRASTRUCTURE_REQUEST.md](INFRASTRUCTURE_REQUEST.md) is an unposted issue draft targeting [XeoNote/Infrastructure-](https://github.com/XeoNote/Infrastructure-/). The later estate is CPU-only with ample CPU/RAM; capacity is not a blocker. Local Mac development precedes the deployment handoff. `vuzmi.com` DNS is on Cloudflare; public exposure is not assumed authorized or completed.
@@ -62,31 +62,31 @@ Dates are a working schedule. Acceptance gates determine readiness; a missed gat
 ### Foundation and installation
 
 - [x] Architecture, product boundary, and primary UI flows are recorded before implementation.
-- [ ] Workspace packages build and type-check with reproducible dependency installation.
+- [x] Workspace packages build and type-check with reproducible dependency installation.
 - [ ] Backend dependencies start through documented self-host commands.
-- [ ] The local Ollama service is running/reachable and a suitable model loads successfully within existing hardware and the zero-additional-cost constraint.
-- [ ] The required database/runtime works on the local testbed despite the initially unavailable Docker daemon; any infrastructure dependency has an identified owner.
-- [ ] All exercised paths add no service cost, and paid provider routes are disabled by default.
-- [ ] Migrations work on a clean database and preserve existing run data when applied again.
+- [x] The local Ollama service is running/reachable and a suitable model loads successfully within existing hardware and the zero-additional-cost constraint.
+- [x] The required database/runtime works on the local testbed despite the initially unavailable Docker daemon; any infrastructure dependency has an identified owner.
+- [x] All exercised paths add no service cost, and paid provider routes are disabled by default.
+- [x] Migrations work on a clean database and preserve existing run data when applied again.
 - [ ] Authentication/access configuration is appropriate to the documented private deployment boundary; exposed endpoints do not rely on a demo identity.
 - [ ] Environment examples contain placeholders, and logs do not print provider secrets.
 
 ### Execution and authority
 
 - [ ] A generic versioned workflow creates a persistent run with correlated steps and events.
-- [ ] Shared contracts use the canonical states `queued`, `running`, `waiting_approval`, `completed`, `failed`, and `cancelled` consistently across clients and runtime.
-- [ ] Sandbox plans and artifacts are visibly identified as local simulation.
+- [x] Shared contracts use the canonical states `queued`, `running`, `waiting_approval`, `completed`, `failed`, and `cancelled` consistently across clients and runtime.
+- [x] Sandbox plans and artifacts are visibly identified as local simulation.
 - [ ] A run can wait for approval, resume, fail, be rejected, and be cancelled with clear state.
-- [ ] Approval binds to a specific payload revision, actor, and intended action.
+- [x] Approval binds to a specific payload revision, actor, and intended action.
 - [ ] Replays and worker restarts do not create duplicate outbox items.
-- [ ] Retries are bounded, and non-retryable failures have actionable messages.
-- [ ] No default workflow performs external sends, spend, privileged host execution, or production deployment.
+- [x] Retries are bounded, and non-retryable failures have actionable messages.
+- [x] No default workflow performs external sends, spend, privileged host execution, or production deployment.
 
 ### Providers and knowledge
 
 - [ ] Each of Ollama, OpenAI, and Claude has an implemented adapter contract and documented configuration.
-- [ ] Real Ollama compatibility is verified; OpenAI/Claude are separately marked verified, unavailable, or unverified without assuming subscription API access.
-- [ ] Routing records its reason and fails closed when local-only or other hard policy cannot be met.
+- [x] Real Ollama compatibility is verified; OpenAI/Claude are separately marked verified, unavailable, or unverified without assuming subscription API access.
+- [x] Routing records its reason and fails closed when local-only or other hard policy cannot be met.
 - [ ] Retrieval filters sources by the applicable workspace/access scope.
 - [ ] A founder release package cites real retrieved passages, handles insufficient evidence visibly, and does not invent test/deployment results.
 - [ ] Updated/deleted sources no longer produce stale active retrieval results.
@@ -97,7 +97,7 @@ Dates are a working schedule. Acceptance gates determine readiness; a missed gat
 - [ ] Web completes the golden workflow and shows empty, waiting, failed, rejected, and completed states.
 - [ ] A real Ollama run produces a concrete downloadable/inspectable plan, acceptance checklist, release notes, risks, and deployment handoff package.
 - [ ] The iOS companion has a documented build result and feature matrix; a preview or web shell is not presented as a successful native build.
-- [ ] Run status and action results survive a backend/worker restart.
+- [x] Run status and action results survive a backend/worker restart.
 - [ ] A documented backup/restore rehearsal succeeds in a separate test database.
 - [ ] The quickstart and release notes state real limitations and verified test results.
 

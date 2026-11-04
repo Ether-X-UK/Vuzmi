@@ -17,22 +17,28 @@ Vuzmi will connect development and IT operations with client support, marketing,
 
 ## Run locally
 
-Use Node.js 22.12 or later in the 22.x series and npm 10:
+Use Node.js 22.12 or later in the 22.x series, npm 10, native PostgreSQL 16 tools, and Ollama:
 
 ```sh
 npm ci
+npm run services:start
+# One-time download if this model is not installed:
+OLLAMA_HOST=http://127.0.0.1:11435 ollama pull qwen3.5:4b
 npm run dev
 ```
 
-Open [the local web client](http://127.0.0.1:5173). The API binds to `127.0.0.1:4310`. Stop both with Ctrl-C.
+Open [the local web client](http://127.0.0.1:5173). The API binds to `127.0.0.1:4310`. Ctrl-C stops the clients and worker; `npm run services:stop` stops Vuzmi's database and Ollama processes. Existing services on Ollama's usual port 11434 are untouched.
 
 ```sh
 npm run check
+npm run test:postgres
 ```
 
-The first slice is a **local simulation**: create a mission, review its deterministic release brief and event history, approve or reject the exact result, and save an approved artifact. No model calls, repository changes, deployments, external messages, or purchases occur. The web client reads the local API; it does not fabricate completed runs.
+Create a mission using **Local Ollama** to generate a draft with an installed local model, or choose the explicitly labelled deterministic **Simulation**. Review the exact document and approve or reject it. Approval saves the reviewed bytes as a local Markdown artifact. PostgreSQL persists runs, events, approvals, and artifacts; a separate pg-boss worker performs bounded, recoverable generation.
 
-State is stored in an ignored local `.data` directory by the API. This single-process development adapter precedes PostgreSQL, authentication, and the worker. Keep the API on loopback; this slice is not ready for network deployment. OpenAI, Claude, Ollama inference, RAG, and native iOS remain planned until their implementation and verification gates pass.
+Model output remains unverified. No repository changes, tools, deployment, external messages, or purchases are performed. OpenAI, Claude, RAG, authentication, and native iOS remain planned. Keep this private development slice on loopback; it is not ready for network deployment.
+
+For the simulation alone, use `npm run dev:simulation`; no database or Ollama is required. See [development instructions](docs/DEVELOPMENT.md) for storage, configuration, and verification boundaries.
 
 ## Project status
 

@@ -1,9 +1,11 @@
 import {
   runSchema,
+  runtimeInfoSchema,
   type CreateRunInput,
   type DecisionInput,
   type Run,
   type WorkspaceSnapshot,
+  type RuntimeInfo,
 } from "@vuzmi/core";
 
 export class ApiError extends Error {
@@ -15,6 +17,10 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+export async function getRuntime(): Promise<RuntimeInfo> {
+  return runtimeInfoSchema.parse(await request("/runtime"));
 }
 
 async function request(path: string, init?: RequestInit): Promise<unknown> {

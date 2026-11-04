@@ -4,6 +4,15 @@
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
-  "scripts": { "dev": "tsx watch src/index.ts", "start": "tsx src/index.ts" },
-  "dependencies": { "@vuzmi/core": "*", "fastify": "^5.12.8", "tsx": "^4.20.6" }
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@vuzmi/core": "*",
+    "@vuzmi/providers": "*",
+    "@vuzmi/runtime": "*",
+    "fastify": "^5.12.8",
+    "tsx": "^4.20.6"
+  }
 }

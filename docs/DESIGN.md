@@ -389,3 +389,11 @@ Before calling the first slice complete:
 - [ ] Native iOS build status is reported separately; a responsive web preview is not called an iOS app.
 
 Visual polish supports the execution contract. It does not replace persistence, authority checks, real provider compatibility, retrieval quality, or recovery evidence required by the architecture and build plan.
+
+## 13. Real local execution increment
+
+Keep the approved visual direction. A mission explicitly selects Simulation or Local Ollama. The latter shows discovered local models and requires PostgreSQL and a fresh worker heartbeat; a missing dependency blocks the real run rather than switching execution modes.
+
+Runs without a proposal display their persisted queued/running/failed state and event trail. Approval, artifact preview, and export appear only after a concrete model result has been saved. Real outputs are labelled as unverified local drafts; they do not imply retrieval, tests, deployment, or publication. Show the selected model and observed usage separately from simulation facts.
+
+Model control becomes an operative local runtime view showing observed Ollama connectivity, eligible installed models, storage backend, and worker readiness. Runtime discovery failure must not hide saved workspace data. The shell describes local-only execution; individual simulator runs retain explicit simulation labels. Existing keyboard, text-size, mobile, and exact-document review behavior remains required.

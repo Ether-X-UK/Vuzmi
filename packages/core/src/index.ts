@@ -29,6 +29,8 @@ export const createRunSchema = z
     title: z.string().trim().min(3).max(120),
     brief: z.string().trim().min(10).max(6000),
     domain: domainSchema.default("build"),
+    mode: z.enum(["simulation", "ollama"]).optional(),
+    model: z.string().trim().min(1).max(200).optional(),
   })
   .strict();
 export type CreateRunInput = z.infer<typeof createRunSchema>;
@@ -60,19 +62,30 @@ export const runSchema = z.object({
   brief: z.string(),
   domain: domainSchema,
   status: runStatusSchema,
-  mode: z.literal("simulation"),
+  mode: z.enum(["simulation", "ollama"]),
   revision: z.number().int().positive(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   route: z.object({
     policy: z.literal("local_only"),
     provider: z.literal("ollama"),
-    model: z.null(),
-    executed: z.literal(false),
+    model: z.string().nullable(),
+    executed: z.boolean(),
     reason: z.string(),
   }),
-  proposal: proposalSchema,
+  proposal: proposalSchema.nullable(),
   events: z.array(runEventSchema),
+  attemptId: z.string().optional(),
+  usage: z
+    .object({
+      inputTokens: z.number().int().nonnegative().nullable(),
+      outputTokens: z.number().int().nonnegative().nullable(),
+      durationMs: z.number().nonnegative().nullable(),
+    })
+    .optional(),
+  error: z
+    .object({ code: z.string(), message: z.string(), retryable: z.boolean() })
+    .optional(),
   decision: z
     .object({
       decision: z.enum(["approve", "reject"]),
@@ -91,6 +104,8 @@ export const runSchema = z.object({
     .optional(),
 });
 export type Run = z.infer<typeof runSchema>;
+export type Proposal = z.infer<typeof proposalSchema>;
+export type Usage = NonNullable<Run["usage"]>;
 export const storedStateSchema = z.object({
   schemaVersion: z.literal(1),
   runs: z.array(runSchema),
@@ -100,16 +115,45 @@ export type WorkspaceSnapshot = {
   workspace: {
     id: "local-workspace";
     name: string;
-    mode: "simulation";
-    storage: "local_file";
+    mode: "simulation" | "local";
+    storage: "local_file" | "postgres";
     cloudExecution: false;
   };
   runs: Run[];
 };
 
+export const localModelSchema = z.object({
+  name: z.string(),
+  digest: z.string(),
+  sizeBytes: z.number().nonnegative(),
+  parameterSize: z.string().nullable(),
+  quantization: z.string().nullable(),
+  capabilities: z.array(z.string()),
+  contextLength: z.number().nullable(),
+});
+export const runtimeInfoSchema = z.object({
+  storage: z.enum(["local_file", "postgres"]),
+  liveAvailable: z.boolean(),
+  checkedAt: z.string().datetime(),
+  worker: z.object({
+    state: z.enum(["ready", "offline", "not_configured"]),
+    lastSeenAt: z.string().datetime().nullable(),
+  }),
+  ollama: z.object({
+    reachable: z.boolean(),
+    models: z.array(localModelSchema),
+    configuredModel: z.string().nullable(),
+    error: z.string().nullable(),
+  }),
+});
+export type RuntimeInfo = z.infer<typeof runtimeInfoSchema>;
+
 export class DomainError extends Error {
   constructor(
-    public readonly code: "STALE_APPROVAL" | "ALREADY_DECIDED",
+    public readonly code:
+      | "STALE_APPROVAL"
+      | "ALREADY_DECIDED"
+      | "INVALID_STATE",
     message: string,
   ) {
     super(message);
@@ -149,7 +193,7 @@ export function simulationContent(input: CreateRunInput): string {
 export function createSimulationRun(
   input: CreateRunInput,
   context: { id: string; now: string; fingerprint: (value: string) => string },
-): Run {
+): Run & { mode: "simulation"; proposal: Proposal } {
   const action = {
     kind: "save_local_artifact" as const,
     destination: "Local artifact library" as const,
@@ -158,7 +202,9 @@ export function createSimulationRun(
   return {
     id: context.id,
     workspaceId: "local-workspace",
-    ...input,
+    title: input.title,
+    brief: input.brief,
+    domain: input.domain,
     status: "waiting_approval",
     mode: "simulation",
     revision: 1,
@@ -213,6 +259,12 @@ export function decideRun(run: Run, input: DecisionInput, now: string): Run {
       "This proposal has already been decided. Refresh the run to see its saved state.",
     );
   }
+  if (!run.proposal || run.status !== "waiting_approval") {
+    throw new DomainError(
+      "INVALID_STATE",
+      "This run has no proposal ready for a decision.",
+    );
+  }
   if (
     input.revision !== run.revision ||
     input.fingerprint !== run.proposal.fingerprint
@@ -262,4 +314,253 @@ export function decideRun(run: Run, input: DecisionInput, now: string): Run {
     });
   }
   return next;
+}
+
+type RunContext = { id: string; now: string; model: string };
+type CompletionContext = {
+  attemptId: string;
+  expectedRevision: number;
+  content: string;
+  usage: Usage;
+  now: string;
+  fingerprint: (value: string) => string;
+};
+type FailureContext = {
+  attemptId: string;
+  expectedRevision: number;
+  error: NonNullable<Run["error"]>;
+  willRetry: boolean;
+  now: string;
+};
+
+function addEvent(
+  run: Run,
+  type: string,
+  message: string,
+  now: string,
+): RunEvent[] {
+  return [
+    ...run.events,
+    { sequence: run.events.length + 1, type, message, occurredAt: now },
+  ];
+}
+
+export function createQueuedRun(
+  input: CreateRunInput,
+  context: RunContext,
+): Run {
+  return {
+    id: context.id,
+    workspaceId: "local-workspace",
+    title: input.title,
+    brief: input.brief,
+    domain: input.domain,
+    mode: "ollama",
+    status: "queued",
+    revision: 1,
+    createdAt: context.now,
+    updatedAt: context.now,
+    proposal: null,
+    route: {
+      policy: "local_only",
+      provider: "ollama",
+      model: context.model,
+      executed: false,
+      reason:
+        "Selected an eligible installed local model. Cloud execution and fallback are disabled.",
+    },
+    events: [
+      {
+        sequence: 1,
+        type: "run.queued",
+        occurredAt: context.now,
+        message:
+          "Local Ollama run queued for the worker. No model output exists yet.",
+      },
+    ],
+  };
+}
+
+export function claimGeneration(
+  run: Run,
+  context: { attemptId: string; now: string; allowRecovery?: boolean },
+): Run | undefined {
+  if (
+    run.mode !== "ollama" ||
+    (run.status !== "queued" &&
+      !(context.allowRecovery && run.status === "running"))
+  )
+    return undefined;
+  return {
+    ...run,
+    status: "running",
+    revision: run.revision + 1,
+    updatedAt: context.now,
+    attemptId: context.attemptId,
+    error: undefined,
+    events: addEvent(
+      run,
+      "generation.started",
+      context.allowRecovery && run.status === "running"
+        ? "Worker recovered an interrupted generation attempt."
+        : "Worker started the configured local Ollama generation.",
+      context.now,
+    ),
+  };
+}
+
+export function completeGeneration(
+  run: Run,
+  context: CompletionContext,
+): Run | undefined {
+  if (
+    run.status !== "running" ||
+    run.attemptId !== context.attemptId ||
+    run.revision !== context.expectedRevision
+  )
+    return undefined;
+  if (!context.content.trim() || context.content.length > 100_000)
+    throw new DomainError(
+      "INVALID_STATE",
+      "The generated document is empty or exceeds the supported size.",
+    );
+  const action = {
+    kind: "save_local_artifact" as const,
+    destination: "Local artifact library" as const,
+    content: context.content,
+  };
+  const generated: Run = {
+    ...run,
+    status: "waiting_approval",
+    revision: run.revision + 1,
+    updatedAt: context.now,
+    proposal: {
+      ...action,
+      fingerprint: context.fingerprint(JSON.stringify(action)),
+    },
+    route: { ...run.route, executed: true },
+    usage: context.usage,
+    error: undefined,
+    events: addEvent(
+      run,
+      "generation.completed",
+      "Local Ollama returned a draft. Its factual claims remain unverified; no tools or retrieval were run.",
+      context.now,
+    ),
+  };
+  generated.events = addEvent(
+    generated,
+    "approval.requested",
+    "Exact generated local artifact is ready for human review.",
+    context.now,
+  );
+  return generated;
+}
+
+export function failGeneration(
+  run: Run,
+  context: FailureContext,
+): Run | undefined {
+  if (
+    run.status !== "running" ||
+    run.attemptId !== context.attemptId ||
+    run.revision !== context.expectedRevision
+  )
+    return undefined;
+  return {
+    ...run,
+    status: context.willRetry ? "queued" : "failed",
+    revision: run.revision + 1,
+    updatedAt: context.now,
+    error: context.error,
+    events: addEvent(
+      run,
+      context.willRetry ? "generation.retry_scheduled" : "generation.failed",
+      context.willRetry
+        ? "The local generation attempt failed. A bounded retry is queued; cloud fallback is disabled."
+        : context.error.message,
+      context.now,
+    ),
+  };
+}
+
+export function exhaustGeneration(
+  run: Run,
+  context: { error: NonNullable<Run["error"]>; now: string },
+): Run | undefined {
+  if (run.mode !== "ollama" || !["queued", "running"].includes(run.status))
+    return undefined;
+  return {
+    ...run,
+    status: "failed",
+    revision: run.revision + 1,
+    updatedAt: context.now,
+    error: { ...context.error, retryable: false },
+    events: addEvent(
+      run,
+      "generation.exhausted",
+      context.error.message,
+      context.now,
+    ),
+  };
+}
+
+/** Validates persisted aggregates; the caller supplies its server-side SHA-256. */
+export function parseRunIntegrity(
+  value: unknown,
+  fingerprint: (value: string) => string,
+): Run {
+  const run = runSchema.parse(value);
+  const invalidSequence = run.events.some(
+    (event, index) => event.sequence !== index + 1,
+  );
+  if (invalidSequence) throw new Error("Invalid run event sequence.");
+  const proposal = run.proposal;
+  if (proposal) {
+    const { kind, destination, content } = proposal;
+    if (
+      proposal.fingerprint !==
+      fingerprint(JSON.stringify({ kind, destination, content }))
+    )
+      throw new Error("Inconsistent proposal fingerprint.");
+  }
+  if (
+    run.mode === "simulation" &&
+    (!proposal || run.route.executed || run.route.model !== null)
+  )
+    throw new Error("Inconsistent simulation data.");
+  if (run.mode === "ollama" && !run.route.model)
+    throw new Error("Missing local model identity.");
+  if (
+    run.status === "waiting_approval" &&
+    (!proposal || run.decision || run.artifact)
+  )
+    throw new Error("Inconsistent waiting approval data.");
+  if (
+    run.status === "completed" &&
+    (!proposal ||
+      run.decision?.decision !== "approve" ||
+      run.artifact?.content !== proposal.content)
+  )
+    throw new Error("Inconsistent approved artifact data.");
+  if (
+    run.status === "cancelled" &&
+    (run.decision?.decision !== "reject" || run.artifact)
+  )
+    throw new Error("Inconsistent rejected artifact data.");
+  if (
+    run.decision &&
+    (!proposal ||
+      run.decision.fingerprint !== proposal.fingerprint ||
+      run.decision.revision !== run.revision - 1)
+  )
+    throw new Error("Inconsistent approval revision.");
+  if (
+    ["queued", "running", "failed"].includes(run.status) &&
+    (proposal || run.decision || run.artifact)
+  )
+    throw new Error("Unexpected artifact before generation.");
+  if (run.status === "running" && !run.attemptId)
+    throw new Error("Missing generation attempt identity.");
+  return run;
 }

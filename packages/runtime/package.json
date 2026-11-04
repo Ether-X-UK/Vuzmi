@@ -1,0 +1,19 @@
+{
+  "name": "@vuzmi/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts"
+  },
+  "dependencies": {
+    "@vuzmi/core": "*",
+    "pg": "^8.16.3",
+    "pg-boss": "12.38.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5"
+  }
+}

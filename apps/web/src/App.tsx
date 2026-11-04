@@ -15,9 +15,19 @@ import {
   type Run,
   type RunStatus,
   type WorkspaceSnapshot,
+  type RuntimeInfo,
 } from "@vuzmi/core";
-import { ApiError, createRun, decideRun, getRun, getWorkspace } from "./api";
+import {
+  ApiError,
+  createRun,
+  decideRun,
+  getRun,
+  getWorkspace,
+  getRuntime,
+} from "./api";
 import { BrandMark, Icon, type IconName } from "./icons";
+import { runtimeBlockReason } from "./runtime";
+import { RuntimeView } from "./RuntimeView";
 
 type Route = {
   page: "command" | "runs" | "approvals" | "roadmap";
@@ -79,6 +89,9 @@ function errorMessage(error: unknown): string {
     ? error.message
     : "Something went wrong. Please try again.";
 }
+function recordedNumber(value: number | null): string {
+  return value === null ? "Not recorded" : value.toLocaleString("en-GB");
+}
 function latestRuns(runs: Run[]): Run[] {
   return [...runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
@@ -101,7 +114,38 @@ export function App() {
   const [missionOpen, setMissionOpen] = useState(false);
   const [domain, setDomain] = useState<Domain | "all">("all");
   const [runError, setRunError] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(true);
   const requestVersion = useRef(0);
+  const runtimeVersion = useRef(0);
+
+  const refreshRuntime = useCallback(async () => {
+    const version = ++runtimeVersion.current;
+    setRuntimeLoading(true);
+    try {
+      const info = await getRuntime();
+      if (version !== runtimeVersion.current) return;
+      setRuntime(info);
+      setRuntimeError(null);
+    } catch (error) {
+      if (version === runtimeVersion.current)
+        setRuntimeError(errorMessage(error));
+    } finally {
+      if (version === runtimeVersion.current) setRuntimeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRuntime();
+    const interval = window.setInterval(() => {
+      void refreshRuntime();
+    }, 15000);
+    return () => {
+      window.clearInterval(interval);
+      runtimeVersion.current += 1;
+    };
+  }, [refreshRuntime]);
 
   useEffect(() => {
     const update = () => {
@@ -295,6 +339,7 @@ export function App() {
                 run={selectedRun}
                 onUpdate={updateRun}
                 connected={connected}
+                storage={snapshot.workspace.storage}
               />
             ) : (
               <EmptyState
@@ -323,6 +368,15 @@ export function App() {
             />
           ) : route.page === "approvals" ? (
             <ApprovalsView runs={runs} />
+          ) : route.section === "models" ? (
+            <RuntimeView
+              runtime={runtime}
+              error={runtimeError}
+              loading={runtimeLoading}
+              onRefresh={() => {
+                void refreshRuntime();
+              }}
+            />
           ) : (
             <RoadmapView section={route.section ?? "foundation"} />
           )}
@@ -331,7 +385,7 @@ export function App() {
               Vuzmi <span className="footer-divider">/</span> Private alpha
             </span>
             <span>
-              <span className="small-dot" /> Local simulation · Human reviewed
+              <span className="small-dot" /> Local-only · Human reviewed
             </span>
           </footer>
         </main>
@@ -356,15 +410,18 @@ export function App() {
           active={route.page === "approvals"}
         />
         <MobileLink
-          href="#/roadmap/foundation"
+          href="#/roadmap/models"
           name="models"
-          label="Foundation"
-          active={route.page === "roadmap"}
+          label="Models"
+          ariaLabel="Model control"
+          active={route.page === "roadmap" && route.section === "models"}
         />
       </nav>
       {missionOpen && (
         <NewMissionDialog
           initialDomain={domain === "all" ? "build" : domain}
+          runtime={runtime}
+          runtimeError={runtimeError}
           onClose={() => setMissionOpen(false)}
           onCreated={(run) => {
             updateRun(run);
@@ -426,6 +483,15 @@ function Sidebar({
             )}
           </a>
         ))}
+        <a
+          aria-label="Model control"
+          className={`nav-link ${route.section === "models" ? "active" : ""}`}
+          aria-current={route.section === "models" ? "page" : undefined}
+          href="#/roadmap/models"
+        >
+          <Icon name="models" size={19} />
+          <span>Model control</span>
+        </a>
       </nav>
       <div className="sidebar-label platform-label">
         THE FOUNDATION <span>PLANNED</span>
@@ -446,14 +512,6 @@ function Sidebar({
         >
           <Icon name="knowledge" size={19} />
           <span>Knowledge & memory</span>
-        </a>
-        <a
-          aria-label="Model control, planned"
-          className={`nav-link ${route.section === "models" ? "active" : ""}`}
-          href="#/roadmap/models"
-        >
-          <Icon name="models" size={19} />
-          <span>Model control</span>
         </a>
       </nav>
       <div className="sidebar-bottom">
@@ -487,15 +545,18 @@ function MobileLink({
   name,
   label,
   active,
+  ariaLabel,
 }: {
   href: string;
   name: IconName;
   label: string;
   active: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <a
       href={href}
+      aria-label={ariaLabel ?? label}
       className={active ? "active" : ""}
       aria-current={active ? "page" : undefined}
     >
@@ -520,6 +581,29 @@ function SimulationBadge() {
       LOCAL SIMULATION
     </span>
   );
+}
+
+function ModeBadge({ run }: { run: Run }) {
+  return run.mode === "simulation" ? (
+    <SimulationBadge />
+  ) : (
+    <span className="simulation-badge">
+      <span />
+      LOCAL OLLAMA
+    </span>
+  );
+}
+
+function runNextStep(run: Run): string {
+  if (run.artifact) return "Local artifact saved";
+  if (run.status === "waiting_approval")
+    return "Review the exact proposed artifact";
+  if (run.decision?.decision === "reject")
+    return "Proposal rejected · no artifact saved";
+  if (run.error) return run.error.message;
+  if (run.status === "queued") return "Queued for the local worker";
+  if (run.status === "running") return "Local generation in progress";
+  return run.mode === "simulation" ? "Local simulation" : "Local Ollama";
 }
 function StatusBadge({ status }: { status: RunStatus }) {
   return (
@@ -594,8 +678,11 @@ function CommandView({ runs, onNew }: { runs: Run[]; onNew: () => void }) {
             </div>
           </div>
           <div className="map-bottom">
-            <SimulationBadge />
-            <span>No model or external action</span>
+            <span className="simulation-badge">
+              <span />
+              HUMAN REVIEWED
+            </span>
+            <span>Simulation or local Ollama</span>
           </div>
         </div>
       </section>
@@ -749,6 +836,7 @@ function CommandView({ runs, onNew }: { runs: Run[]; onNew: () => void }) {
         </div>
         <a
           className="foundation-link"
+          style={{ display: "grid", minWidth: 44, minHeight: 44 }}
           href="#/roadmap/foundation"
           aria-label="Explore the platform foundation"
         >
@@ -856,7 +944,10 @@ function RunsView({
           Mission history{" "}
           <span className="inline-count">{filtered.length}</span>
         </h2>
-        <SimulationBadge />
+        <span className="simulation-badge">
+          <span />
+          LOCAL-ONLY WORKSPACE
+        </span>
       </div>
       {filtered.length ? (
         <RunList runs={filtered} />
@@ -908,7 +999,7 @@ function RunList({ runs }: { runs: Run[] }) {
                         ? "Review the exact proposed artifact"
                         : run.decision?.decision === "reject"
                           ? "Proposal rejected · no artifact saved"
-                          : "Local simulation"}{" "}
+                          : runNextStep(run)}{" "}
                     <span className="row-separator">·</span>{" "}
                     <code>{shortId(run.id)}</code>
                   </span>
@@ -1002,26 +1093,31 @@ function RunDetail({
   run,
   onUpdate,
   connected,
+  storage,
 }: {
   run: Run;
   onUpdate: (run: Run) => void;
   connected: boolean;
+  storage: WorkspaceSnapshot["workspace"]["storage"];
 }) {
   const [deciding, setDeciding] = useState<"approve" | "reject" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<string | null>(null);
+  const proposal = run.proposal;
+  const documentContent = run.artifact?.content ?? proposal?.content;
   useEffect(() => {
     setError(null);
     setCopyState(null);
   }, [run.id]);
   const decide = async (decision: "approve" | "reject") => {
+    if (!proposal || run.status !== "waiting_approval") return;
     setDeciding(decision);
     setError(null);
     try {
       onUpdate(
         await decideRun(run.id, {
           decision,
-          fingerprint: run.proposal.fingerprint,
+          fingerprint: proposal.fingerprint,
           revision: run.revision,
         }),
       );
@@ -1039,17 +1135,17 @@ function RunDetail({
     }
   };
   const copy = async () => {
+    if (documentContent === undefined) return;
     try {
-      await navigator.clipboard.writeText(
-        run.artifact?.content ?? run.proposal.content,
-      );
+      await navigator.clipboard.writeText(documentContent);
       setCopyState("Copied to clipboard");
     } catch {
       setCopyState("Clipboard unavailable. Use Download to save the document.");
     }
   };
   const download = () => {
-    const blob = new Blob([run.artifact?.content ?? run.proposal.content], {
+    if (documentContent === undefined) return;
+    const blob = new Blob([documentContent], {
       type: "text/markdown;charset=utf-8",
     });
     const url = URL.createObjectURL(blob);
@@ -1080,7 +1176,7 @@ function RunDetail({
         <div>
           <div className="detail-status-line">
             <StatusBadge status={run.status} />
-            <SimulationBadge />
+            <ModeBadge run={run} />
           </div>
           <h1>{run.title}</h1>
           <p>
@@ -1093,70 +1189,83 @@ function RunDetail({
       </div>
       <div className="run-detail-grid">
         <div className="run-main-column">
-          <section className="artifact-panel">
-            <div className="artifact-toolbar">
-              <div>
-                <Icon name="knowledge" size={18} />
-                <span>
-                  {approved
-                    ? "Saved local artifact"
-                    : rejected
-                      ? "Rejected proposal"
-                      : "Artifact for review"}
-                </span>
-                <span className="revision-label">
-                  REV {run.decision?.revision ?? run.revision}
-                </span>
+          {documentContent !== undefined ? (
+            <section className="artifact-panel">
+              <div className="artifact-toolbar">
+                <div>
+                  <Icon name="knowledge" size={18} />
+                  <span>
+                    {approved
+                      ? "Saved local artifact"
+                      : rejected
+                        ? "Rejected proposal"
+                        : "Artifact for review"}
+                  </span>
+                  <span className="revision-label">
+                    REV {run.decision?.revision ?? run.revision}
+                  </span>
+                </div>
+                <div>
+                  <button
+                    className="icon-button"
+                    aria-label={
+                      approved ? "Copy saved artifact" : "Copy draft artifact"
+                    }
+                    title="Copy document"
+                    onClick={() => {
+                      void copy();
+                    }}
+                  >
+                    <Icon name="copy" size={17} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    aria-label={
+                      approved
+                        ? "Download saved artifact"
+                        : "Download draft artifact"
+                    }
+                    title="Download Markdown"
+                    onClick={download}
+                  >
+                    <Icon name="download" size={17} />
+                  </button>
+                </div>
               </div>
-              <div>
-                <button
-                  className="icon-button"
-                  aria-label={
-                    approved ? "Copy saved artifact" : "Copy draft artifact"
-                  }
-                  title="Copy document"
-                  onClick={() => {
-                    void copy();
-                  }}
-                >
-                  <Icon name="copy" size={17} />
-                </button>
-                <button
-                  className="icon-button"
-                  aria-label={
-                    approved
-                      ? "Download saved artifact"
-                      : "Download draft artifact"
-                  }
-                  title="Download Markdown"
-                  onClick={download}
-                >
-                  <Icon name="download" size={17} />
-                </button>
+              {copyState && (
+                <p className="copy-feedback" role="status">
+                  {copyState}
+                </p>
+              )}
+              {run.mode === "ollama" && (
+                <div className="provider-output-notice">
+                  <Icon name="alert" size={17} />
+                  <p>
+                    Unverified local model output. Review every factual claim;
+                    no retrieval, repository inspection, or tools were run.
+                  </p>
+                </div>
+              )}
+              <div
+                id="artifact-preview"
+                className="document-preview"
+                tabIndex={-1}
+              >
+                <MarkdownDocument content={documentContent} />
               </div>
-            </div>
-            {copyState && (
-              <p className="copy-feedback" role="status">
-                {copyState}
-              </p>
-            )}
-            <div
-              id="artifact-preview"
-              className="document-preview"
-              tabIndex={-1}
-            >
-              <MarkdownDocument
-                content={run.artifact?.content ?? run.proposal.content}
-              />
-            </div>
-            <div className="artifact-bottom">
-              <span className="small-dot" />
-              {approved && run.artifact
-                ? `Saved ${dateTime(run.artifact.savedAt)}`
-                : "Deterministic local template · No model call"}
-              <span>MARKDOWN</span>
-            </div>
-          </section>
+              <div className="artifact-bottom">
+                <span className="small-dot" />
+                {approved && run.artifact
+                  ? `Saved ${dateTime(run.artifact.savedAt)}`
+                  : run.mode === "simulation"
+                    ? "Deterministic local template · No model call"
+                    : "Local Ollama draft · Awaiting review"}
+                <span>MARKDOWN</span>
+              </div>
+            </section>
+          ) : (
+            <GenerationProgress run={run} />
+          )}
           <section className="timeline-section">
             <div className="section-header">
               <div>
@@ -1221,40 +1330,65 @@ function RunDetail({
             className={`review-panel ${approved ? "review-completed" : rejected ? "review-rejected" : ""}`}
           >
             <div className="review-panel-symbol">
-              <Icon name={rejected ? "close" : "check"} size={24} />
+              <Icon
+                name={
+                  run.status === "failed"
+                    ? "alert"
+                    : rejected
+                      ? "close"
+                      : proposal
+                        ? "check"
+                        : "clock"
+                }
+                size={24}
+              />
             </div>
             <div className="section-kicker">
               {approved
                 ? "DECISION RECORDED"
                 : rejected
                   ? "REVIEW CLOSED"
-                  : "YOUR DECISION"}
+                  : proposal
+                    ? "YOUR DECISION"
+                    : "EXECUTION STATUS"}
             </div>
             <h2>
               {approved
                 ? "A clear result."
                 : rejected
                   ? "Proposal rejected."
-                  : "Ready for your review."}
+                  : proposal
+                    ? "Ready for your review."
+                    : run.status === "failed"
+                      ? "Generation stopped."
+                      : run.status === "running"
+                        ? "Work is in progress."
+                        : "Waiting for the worker."}
             </h2>
             <p>
               {approved
                 ? "This exact document is saved in your local artifact library."
                 : rejected
                   ? "Your decision is recorded. No artifact was saved by this run."
-                  : "Approve this exact release brief to save it in the local artifact library."}
+                  : proposal
+                    ? "Approve this exact release brief to save it in the local artifact library."
+                    : run.status === "failed"
+                      ? "No draft is ready for review. The recorded failure appears in the execution trail."
+                      : "A reviewable document will appear only after local generation completes."}
             </p>
-            <div className="review-action-scope">
-              <span>PROPOSED ACTION</span>
-              <strong>Save local artifact</strong>
-              <p>No deployment, publication, or external message.</p>
-            </div>
+            {proposal && (
+              <div className="review-action-scope">
+                <span>PROPOSED ACTION</span>
+                <strong>Save local artifact</strong>
+                <p>No deployment, publication, or external message.</p>
+              </div>
+            )}
             {error && (
               <div className="inline-error" role="alert">
                 {error}
               </div>
             )}
-            {run.status === "waiting_approval" && (
+            {run.status === "waiting_approval" && proposal && (
               <div className="review-buttons">
                 <button
                   className="button button-secondary"
@@ -1319,7 +1453,11 @@ function RunDetail({
             <dl>
               <div>
                 <dt>Mode</dt>
-                <dd>Local simulation</dd>
+                <dd>
+                  {run.mode === "simulation"
+                    ? "Local simulation"
+                    : "Local Ollama"}
+                </dd>
               </div>
               <div>
                 <dt>Data policy</dt>
@@ -1330,16 +1468,58 @@ function RunDetail({
               </div>
               <div>
                 <dt>Executor</dt>
-                <dd>Deterministic template</dd>
+                <dd>
+                  {run.mode === "simulation"
+                    ? "Deterministic template"
+                    : "Local worker"}
+                </dd>
               </div>
               <div>
                 <dt>Model</dt>
-                <dd>No provider call</dd>
+                <dd>
+                  {run.mode === "simulation"
+                    ? "No provider call"
+                    : (run.route.model ?? "Not selected")}
+                </dd>
+              </div>
+              {run.mode === "ollama" && (
+                <div>
+                  <dt>Generation result</dt>
+                  <dd>
+                    {run.route.executed
+                      ? "Provider output recorded"
+                      : "No output recorded"}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt>Storage</dt>
+                <dd>{storage === "postgres" ? "PostgreSQL" : "Local file"}</dd>
               </div>
               <div>
                 <dt>Destination</dt>
-                <dd>{run.proposal.destination}</dd>
+                <dd>{proposal?.destination ?? "No proposal yet"}</dd>
               </div>
+              {run.usage && (
+                <>
+                  <div>
+                    <dt>Input tokens</dt>
+                    <dd>{recordedNumber(run.usage.inputTokens)}</dd>
+                  </div>
+                  <div>
+                    <dt>Output tokens</dt>
+                    <dd>{recordedNumber(run.usage.outputTokens)}</dd>
+                  </div>
+                  <div>
+                    <dt>Provider duration</dt>
+                    <dd>
+                      {run.usage.durationMs === null
+                        ? "Not recorded"
+                        : `${(run.usage.durationMs / 1000).toLocaleString("en-GB", { maximumFractionDigits: 2 })}s`}
+                    </dd>
+                  </div>
+                </>
+              )}
             </dl>
             <details className="route-details">
               <summary>
@@ -1347,10 +1527,20 @@ function RunDetail({
                 <Icon name="chevron" size={13} />
               </summary>
               <p>{run.route.reason}</p>
-              <span className="tiny-label">PROPOSAL FINGERPRINT</span>
-              <code className="fingerprint">{run.proposal.fingerprint}</code>
+              {proposal && (
+                <>
+                  <span className="tiny-label">PROPOSAL FINGERPRINT</span>
+                  <code className="fingerprint">{proposal.fingerprint}</code>
+                </>
+              )}
               <span className="tiny-label">RUN ID</span>
               <code className="fingerprint">{run.id}</code>
+              {run.attemptId && (
+                <>
+                  <span className="tiny-label">ATTEMPT ID</span>
+                  <code className="fingerprint">{run.attemptId}</code>
+                </>
+              )}
             </details>
           </section>
           <details className="brief-details">
@@ -1407,12 +1597,69 @@ function MarkdownDocument({ content }: { content: string }) {
   return <article className="markdown-document">{blocks}</article>;
 }
 
+function GenerationProgress({ run }: { run: Run }) {
+  const failed = run.status === "failed";
+  return (
+    <section
+      className={`generation-state ${failed ? "generation-failed" : ""}`}
+    >
+      <span className="empty-state-icon">
+        <Icon
+          name={
+            failed ? "alert" : run.status === "running" ? "operate" : "clock"
+          }
+          size={28}
+        />
+      </span>
+      <div className="section-kicker">
+        {failed ? "RECORDED FAILURE" : "LOCAL EXECUTION"}
+      </div>
+      <h2>
+        {failed
+          ? "No draft was produced."
+          : run.status === "running"
+            ? "The local model is working."
+            : "Your mission is queued."}
+      </h2>
+      <p>
+        {failed
+          ? "Generation stopped before a proposal was ready. No artifact was saved."
+          : run.status === "running"
+            ? "The worker has started generation. A complete draft will appear here when the provider returns a usable result."
+            : "Waiting for the local worker. No model output exists yet."}
+      </p>
+      {run.error && (
+        <div className="inline-error">
+          <strong>{run.error.code}</strong>
+          <p>{run.error.message}</p>
+          {run.status === "queued" && (
+            <p>A bounded retry is queued. Cloud fallback is disabled.</p>
+          )}
+        </div>
+      )}
+      <div className="generation-last-event">
+        <Icon name="clock" size={15} />
+        <span>
+          {run.events.at(-1)?.message ?? "No execution event recorded."}
+        </span>
+      </div>
+      <time dateTime={run.updatedAt}>
+        Last recorded update {dateTime(run.updatedAt)}
+      </time>
+    </section>
+  );
+}
+
 function NewMissionDialog({
   initialDomain,
+  runtime,
+  runtimeError,
   onClose,
   onCreated,
 }: {
   initialDomain: Domain;
+  runtime: RuntimeInfo | null;
+  runtimeError: string | null;
   onClose: () => void;
   onCreated: (run: Run) => void;
 }) {
@@ -1421,7 +1668,21 @@ function NewMissionDialog({
     title: "Prepare Vuzmi’s release brief",
     brief: defaultBrief,
     domain: initialDomain,
+    mode: "simulation",
   });
+  const [model, setModel] = useState("");
+  const blockReason = runtimeBlockReason(runtime, runtimeError);
+  const liveMode = input.mode === "ollama";
+  const selectedModelAvailable = Boolean(
+    runtime?.ollama.models.some((item) => item.name === model),
+  );
+  useEffect(() => {
+    if (model || !runtime?.ollama.models.length) return;
+    const configured = runtime.ollama.models.find(
+      (item) => item.name === runtime.ollama.configuredModel,
+    );
+    setModel(configured?.name ?? runtime.ollama.models[0]!.name);
+  }, [runtime, model]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -1433,7 +1694,17 @@ function NewMissionDialog({
   }, []);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const parsed = createRunSchema.safeParse(input);
+    if (liveMode && (blockReason || !selectedModelAvailable)) {
+      setError(
+        blockReason ??
+          "Select an installed model before starting local generation.",
+      );
+      return;
+    }
+    const parsed = createRunSchema.safeParse({
+      ...input,
+      ...(liveMode ? { model } : {}),
+    });
     if (!parsed.success) {
       setError(
         parsed.error.issues
@@ -1490,6 +1761,72 @@ function NewMissionDialog({
             void submit(event);
           }}
         >
+          <div className="field-label-row execution-mode-label">
+            <label className="field-label" htmlFor="mission-mode">
+              Execution mode
+            </label>
+            <a
+              href="#/roadmap/models"
+              aria-disabled={submitting}
+              onClick={(event) => {
+                if (submitting) event.preventDefault();
+                else onClose();
+              }}
+            >
+              Model control
+            </a>
+          </div>
+          <select
+            id="mission-mode"
+            value={input.mode ?? "simulation"}
+            disabled={submitting}
+            onChange={(event) => {
+              setInput({
+                ...input,
+                mode: event.target.value === "ollama" ? "ollama" : "simulation",
+              });
+              setError(null);
+            }}
+          >
+            <option value="simulation">
+              Simulation — deterministic local template
+            </option>
+            <option value="ollama" disabled={Boolean(blockReason)}>
+              Local Ollama
+              {blockReason ? " — unavailable" : " — model generation"}
+            </option>
+          </select>
+          {blockReason && <p className="mode-readiness">{blockReason}</p>}
+          {liveMode && (
+            <>
+              <div className="field-label-row">
+                <label className="field-label" htmlFor="mission-model">
+                  Installed model
+                </label>
+                <span>Local-only · No cloud fallback</span>
+              </div>
+              <select
+                id="mission-model"
+                value={model}
+                disabled={submitting || Boolean(blockReason)}
+                required
+                onChange={(event) => setModel(event.target.value)}
+              >
+                {!selectedModelAvailable && (
+                  <option value={model}>
+                    {model
+                      ? `${model} — no longer available`
+                      : "Select an installed model"}
+                  </option>
+                )}
+                {runtime?.ollama.models.map((item) => (
+                  <option key={item.name} value={item.name}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           <label className="field-label" htmlFor="mission-title">
             Mission title
           </label>
@@ -1548,16 +1885,23 @@ function NewMissionDialog({
           />
           <div className="mission-mode">
             <div>
-              <SimulationBadge />
+              {liveMode ? (
+                <span className="simulation-badge">
+                  <span />
+                  LOCAL OLLAMA
+                </span>
+              ) : (
+                <SimulationBadge />
+              )}
               <span className="review-required">
                 <Icon name="check" size={13} />
                 Review required
               </span>
             </div>
             <p>
-              A deterministic template prepares a local release brief. No model
-              calls, repository inspection, command execution, deployment, or
-              messages.
+              {liveMode
+                ? "Your brief is sent to the selected local Ollama model. Its output is unverified and requires review. No retrieval, repository inspection, tools, deployment, or messages."
+                : "A deterministic template prepares a local release brief. No model calls, repository inspection, command execution, deployment, or messages."}
             </p>
           </div>
           {error && (
@@ -1577,7 +1921,10 @@ function NewMissionDialog({
             <button
               type="submit"
               className="button button-primary"
-              disabled={submitting}
+              disabled={
+                submitting ||
+                (liveMode && (Boolean(blockReason) || !selectedModelAvailable))
+              }
             >
               <Icon
                 name={submitting ? "refresh" : "arrow"}
@@ -1601,7 +1948,12 @@ const roadmapContent: Record<
     accent: string;
     description: string;
     icon: IconName;
-    features: { title: string; description: string; icon: IconName }[];
+    features: {
+      title: string;
+      description: string;
+      icon: IconName;
+      href?: string;
+    }[];
   }
 > = {
   models: {
@@ -1710,8 +2062,9 @@ const roadmapContent: Record<
       {
         title: "Model control",
         description:
-          "Ollama, OpenAI, and Claude behind visible, enforceable policies.",
+          "Inspect installed Ollama models, worker readiness, and local routing. OpenAI and Claude adapters remain planned.",
         icon: "models",
+        href: "#/roadmap/models",
       },
     ],
   },
@@ -1736,10 +2089,15 @@ function RoadmapView({ section }: { section: string }) {
         </span>
       </div>
       <div className="roadmap-notice">
-        <span className="planned-badge">ON THE ROADMAP</span>
+        <span className="planned-badge">
+          {section === "foundation" ? "PLATFORM IN PROGRESS" : "ON THE ROADMAP"}
+        </span>
         <p>
-          This area describes planned capabilities. The current slice runs local
-          simulations and saves reviewed local artifacts.
+          {section === "foundation"
+            ? "The foundation combines available local execution with planned agents, knowledge, and cloud providers."
+            : "This area describes planned capabilities."}{" "}
+          The current slice supports local simulation and configured local
+          Ollama generation, ending in reviewed local artifacts.
         </p>
       </div>
       <div className="roadmap-cards">
@@ -1751,7 +2109,14 @@ function RoadmapView({ section }: { section: string }) {
             </div>
             <h2>{feature.title}</h2>
             <p>{feature.description}</p>
-            <span className="planned-badge">Planned</span>
+            {feature.href ? (
+              <a className="text-link" href={feature.href}>
+                Open Model control
+                <Icon name="arrow" size={16} />
+              </a>
+            ) : (
+              <span className="planned-badge">Planned</span>
+            )}
           </section>
         ))}
       </div>
@@ -1763,8 +2128,9 @@ function RoadmapView({ section }: { section: string }) {
           <span className="section-kicker">AVAILABLE IN THIS SLICE</span>
           <h2>Intent → review → local result.</h2>
           <p>
-            Create a deterministic mission, review its exact proposal, and save
-            a local artifact with a recorded decision.
+            Create a simulation or explicitly choose an available local Ollama
+            model, review the exact proposal, and save a local artifact with a
+            recorded decision.
           </p>
         </div>
         <a className="button button-secondary" href="#/">

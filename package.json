@@ -4,14 +4,24 @@
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
-  "engines": { "node": ">=22.12.0 <23" },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0 <23"
+  },
   "scripts": {
-    "dev": "concurrently --kill-others -n api,web -c cyan,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev": "npm run services:start && concurrently --kill-others -n api,worker,web -c cyan,yellow,green \"npm:dev:api\" \"npm:dev:worker\" \"npm:dev:web\"",
+    "dev:simulation": "VUZMI_SIMULATION_ONLY=1 concurrently --kill-others -n api,web -c cyan,green \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "npm run dev --workspace @vuzmi/api",
     "dev:web": "npm run dev --workspace @vuzmi/web",
+    "dev:worker": "npm run dev --workspace @vuzmi/worker",
+    "services:start": "node scripts/dev-services.mjs start",
+    "services:stop": "node scripts/dev-services.mjs stop",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test packages/core/test/*.test.ts apps/api/test/*.test.ts",
+    "test": "node --import tsx --test packages/core/test/*.test.ts packages/providers/test/*.test.ts apps/api/test/*.test.ts",
+    "test:postgres": "node scripts/test-postgres.mjs",
     "build": "npm run build --workspace @vuzmi/web",
     "check": "npm run typecheck && npm test && npm run build"
   },

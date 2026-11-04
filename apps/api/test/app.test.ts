@@ -14,6 +14,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import type { Run, WorkspaceSnapshot } from "@vuzmi/core";
 import { buildApp } from "../src/app.js";
+import { ProviderError } from "@vuzmi/providers";
 import { STATE_FILE_NAME } from "../src/store.js";
 
 const brief = {
@@ -33,6 +34,7 @@ async function harness(t: TestContext) {
 }
 
 function decisionFor(run: Run, decision: "approve" | "reject" = "approve") {
+  assert.ok(run.proposal);
   return {
     decision,
     fingerprint: run.proposal.fingerprint,
@@ -56,6 +58,51 @@ test("new workspace is empty, explicitly simulated, and privately persisted", as
   );
 });
 
+test("runtime failure does not hide stored runs and live requests never fall back to simulation", async (t) => {
+  const dataDir = await mkdtemp(join(tmpdir(), "vuzmi-runtime-"));
+  t.after(async () => rm(dataDir, { recursive: true, force: true }));
+  let discoveryCalls = 0;
+  const app = await buildApp({
+    dataDir,
+    discoverModels: async () => {
+      discoveryCalls += 1;
+      throw new ProviderError(
+        "UNAVAILABLE",
+        "The local Ollama service could not be reached.",
+        true,
+      );
+    },
+  });
+  t.after(async () => app.close());
+  const blocked = await app.inject({
+    method: "POST",
+    url: "/v1/runs",
+    payload: { ...brief, mode: "ollama", model: "qwen3.5:4b" },
+  });
+  assert.equal(blocked.statusCode, 503);
+  assert.equal(blocked.json().error.code, "LIVE_NOT_CONFIGURED");
+  assert.equal(discoveryCalls, 0);
+  assert.deepEqual(
+    (await app.inject({ method: "GET", url: "/v1/runs" })).json().runs,
+    [],
+  );
+  const created = await app.inject({
+    method: "POST",
+    url: "/v1/runs",
+    payload: brief,
+  });
+  assert.equal(created.statusCode, 201);
+  const observed = await app.inject({ method: "GET", url: "/v1/runtime" });
+  assert.equal(observed.json().liveAvailable, false);
+  assert.equal(observed.json().ollama.reachable, false);
+  assert.equal(observed.json().worker.state, "not_configured");
+  assert.equal(
+    (await app.inject({ method: "GET", url: "/v1/workspace" })).json().runs
+      .length,
+    1,
+  );
+});
+
 test("valid mission creates an inspectable simulation; invalid inputs create nothing", async (t) => {
   const { app } = await harness(t);
   const invalid = await app.inject({
@@ -74,6 +121,7 @@ test("valid mission creates an inspectable simulation; invalid inputs create not
   assert.equal(run.status, "waiting_approval");
   assert.equal(run.route.executed, false);
   assert.equal(run.route.model, null);
+  assert.ok(run.proposal);
   assert.match(run.proposal.content, /LOCAL SIMULATION/);
   assert.equal(run.events.length, 3);
   const found = await app.inject({ method: "GET", url: `/v1/runs/${run.id}` });
@@ -102,7 +150,7 @@ test("approval saves exactly one artifact, replay is idempotent, and restart pre
   responses.forEach((response) => assert.equal(response.statusCode, 200));
   const decided = responses[0]!.json<{ run: Run }>().run;
   assert.equal(decided.status, "completed");
-  assert.equal(decided.artifact?.content, original.proposal.content);
+  assert.equal(decided.artifact?.content, original.proposal!.content);
   assert.equal(
     decided.events.filter((event) => event.type === "artifact.saved").length,
     1,
