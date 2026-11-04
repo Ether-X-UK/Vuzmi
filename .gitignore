@@ -1,0 +1,19 @@
+# Dependencies and build output
+node_modules/
+dist/
+build/
+.expo/
+coverage/
+*.tsbuildinfo
+
+# Local configuration and runtime state
+.env
+.env.*
+!.env.example
+.data/
+*.log
+.DS_Store
+
+# Editor state
+.idea/
+.vscode/

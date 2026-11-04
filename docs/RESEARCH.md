@@ -1,0 +1,74 @@
+# Vuzmi technical research
+
+Status: proposed architecture evidence, updated with the founder's zero-additional-cost constraint and SaaS-founder audience. Reviewed 4 November 2026 using primary provider/project documentation. This review supports design choices; it does not mean integrations have been implemented or live-tested. No API credentials were used.
+
+## Provider interfaces
+
+| Primary source | Verified point | Implication for Vuzmi |
+| --- | --- | --- |
+| [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling) | Function tools use explicit schemas and calls/results are correlated; Responses has its own lifecycle | Use a native Responses adapter and validate complete tool arguments before executing |
+| [OpenAI streaming](https://developers.openai.com/api/docs/guides/streaming-responses) | Responses streams typed SSE events | Convert provider events into Vuzmi's stable run-event contract; retain provider error/finish details |
+| [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data) | Application-state retention and abuse-monitoring retention are separate; eligibility/feature exceptions apply | Default to `store: false`, keep required application state in Vuzmi, and avoid claiming that this alone guarantees zero retention |
+| [Anthropic tool-call lifecycle](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls) | Client tools return `tool_use` blocks and accept corresponding `tool_result` blocks; history order matters | Preserve IDs, content blocks and message ordering rather than translating everything to plain chat text |
+| [Anthropic streaming](https://platform.claude.com/docs/en/build-with-claude/streaming) | Messages uses SSE with separate content block types; tool blocks cannot be treated as recoverable partial text | Accumulate complete tool input before dispatch; failed streams create explicit attempts |
+| [Anthropic data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention) | Retention depends on feature, arrangement and model; zero-retention arrangements have eligibility conditions and exceptions | Privacy policy must reflect the configured provider/model; locality and data policy constrain routing |
+| [Ollama chat API](https://docs.ollama.com/api/chat) | Native `/api/chat` accepts messages, optional tools and structured format; streaming defaults on, and model options vary | Use a native adapter, discover/configure model capabilities and test tools; compatibility is not a guarantee that every installed model is a reliable agent |
+| [Ollama source API documentation](https://github.com/ollama/ollama/blob/main/docs/api.md) | Tool calls and tool results are represented in the native message history | Keep adapter-specific correlation/continuation logic behind a portable application contract |
+
+The OpenAI Docs skill was consulted for source selection. Sources above are official OpenAI documentation; no specific model or price is selected in this plan. Model names, capability limits and prices must be verified and configured when live integration begins.
+
+The orchestrator also identified current official sources for [ChatGPT subscription API credits](https://developers.openai.com/api/docs/guides/chatgpt-api-credits), [Sign in with ChatGPT profiles and sessions for open-source applications](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions), and [Sign in with ChatGPT](https://learn.chatgpt.com/docs/sign-in-with-chatgpt). These are routes to investigate, not evidence that this account or Vuzmi is eligible. Do not state categorically that subscriptions can never support runtime access, and do not assume that they do. Use only an official supported integration; do not extract/reuse another application's tokens. Ollama is the initial inference target, cloud calls are disabled by default, and no additional paid requests, credit purchases or automatic cloud fallback are authorised.
+
+## Durable execution: Temporal versus a PostgreSQL queue
+
+| Option | Evidence | Vuzmi recommendation |
+| --- | --- | --- |
+| Temporal | [Workflow documentation](https://docs.temporal.io/workflows) describes recovery through ordered event-history replay. [Production deployment](https://docs.temporal.io/production-deployment) separates application workers from the coordinating Temporal Service. [Self-hosting checklist](https://docs.temporal.io/self-hosted-guide/production-checklist) documents operational concerns. | Strong option for substantial long-running sagas, timers, child workflows and compensation. Defer adding a self-hosted service for the first alpha; revisit against actual runtime complexity. |
+| pg-boss | [Project documentation](https://github.com/timgit/pg-boss) describes PostgreSQL `SKIP LOCKED`, transactional enqueue, deferral/scheduling, retries and dead-letter queues. | Use it for work delivery while Vuzmi stores explicit run/step state. It reduces infrastructure count for a small self-hosted system. |
+
+Inference: the queue is the smaller week-one dependency, provided the initial runtime is deliberately constrained. It does not supply all workflow semantics. Persist approval waits, leases, step attempts and operation identities independently of queue delivery. Do not claim exactly-once external effects: a provider may complete a send or deployment while its response is lost. Use provider idempotency where available and reconcile unknown outcomes before retrying.
+
+## Tenant isolation and retrieval
+
+| Primary source | Verified point | Implication |
+| --- | --- | --- |
+| [PostgreSQL row security](https://www.postgresql.org/docs/current/ddl-rowsecurity.html) | Enabled RLS without an applicable policy denies ordinary row access. Superusers and `BYPASSRLS` roles bypass it; table owners ordinarily do too, with `FORCE ROW LEVEL SECURITY` available. Whole-table operations and referential-integrity checks have caveats. | Use a separate migration owner and restricted runtime role; test policies using that actual role. Combine RLS with workspace IDs, composite foreign keys and service-layer access checks. |
+| [pgvector project documentation](https://github.com/pgvector/pgvector) | Exact and approximate vector search coexist; approximate search followed by filtering can yield fewer results. Iterative scans can continue searching within configured limits. | Begin with exact search on a tenant/ACL-filtered alpha corpus. Add ANN after measuring latency and filtered recall; never loosen authorisation to get more results. |
+
+Inference: one PostgreSQL installation is a good initial home for queue state, business data, full-text retrieval and vectors. This is an operational simplification, not an unlimited-scale claim. Ingestion concurrency, vector queries and queue polling need resource budgets and monitoring.
+
+## Execution isolation
+
+- [Docker Engine security](https://docs.docker.com/engine/security/) explains why Docker daemon control and host mounts expose substantial host authority. The API must not receive the host Docker socket or accept arbitrary container configuration from model output.
+- [Docker rootless mode](https://docs.docker.com/engine/security/rootless/) runs daemon/containers without root to reduce some runtime risks. It supports the proposed self-hosted runner posture; rootless containers alone do not establish complete isolation for hostile multitenant SaaS workloads.
+
+Design inference: isolate execution behind a constrained runner protocol, deny egress by default, broker short-lived credentials and retain approved patch/artifact evidence. Use stronger sandbox/VM boundaries before accepting arbitrary hosted customer code. Read-only status and patch proposals can ship before command execution is enabled.
+
+Workstation observation supplied by the orchestrator: Docker is installed but its daemon is unavailable; Ollama is installed but not listening at `localhost:11434`. No container integration, live Ollama generation, database recovery or runner isolation test has passed in this session. Static docs and future configuration must not be described as a working deployment.
+
+The immediate foundation can be built without these dependencies: loopback-only local simulation, pure workflow/approval/routing functions in `packages/core`, Fastify, React and a serialised atomic-write JSON adapter for single-process development. This is explicitly simulated and does not provide the deployable alpha's required PostgreSQL-backed execution or authentication. Core/API tests must not make paid network calls or fabricate live business metrics. PostgreSQL, authentication and real local inference are subsequent release gates.
+
+## Deployment and product conclusions
+
+The following are design decisions rather than claims made by a provider:
+
+1. Build a TypeScript monorepo with React/Vite, Fastify API and a separate worker, PostgreSQL/pgvector/pg-boss, and an Expo iOS companion.
+2. Restrict the initial alpha to one organisation while building workspace identifiers and access checks into the data model.
+3. Use founder release preparation as the release proof: brief/project evidence -> knowledge -> local routed generation -> change/release/marketing/sales drafts -> review -> approved local artifact/outbox -> durable evidence. Support is the next template; a paid remote connector is not required for day seven.
+4. Local-only routing must fail closed. A SaaS server cannot reach a customer's `localhost`; hosted access to private Ollama requires an explicitly paired outbound connector or a separately approved network path.
+5. Maintain separate lifecycles for authoritative business records, RAG reference sources, agent memory and content-bearing run history.
+6. Keep the same core code available for self-hosting and hosted operation; choose licensing, pricing, billing provider and hosting explicitly.
+
+## Validation still required
+
+- Live provider account access, model availability, rate limits, streaming/tool behaviour and local hardware capacity.
+- Exact supported versions, dependency/security review and licence compatibility of adopted packages.
+- Worker crash recovery, duplicate delivery, unknown external outcomes, approval expiry and budget contention.
+- Tenant and collection access tests across synchronous API, background jobs, retrieval, artifacts, exports and webhooks.
+- Retrieval quality on a representative corpus, citation validity, deletion propagation and embedding migration.
+- Self-host bootstrap, upgrade, backup/restore, encryption-key recovery and safe handling of restored pending writes.
+- Actual iOS build/device connectivity, secure token storage and chosen distribution path.
+- Official subscription-backed access eligibility, if any, without additional spending or unsupported token reuse.
+- Commercial/licensing choices, the concrete founder acceptance example and evidence needed for a polished deployable alpha after the first week.
+
+Architecture details and proposed ADRs are in [ARCHITECTURE.md](./ARCHITECTURE.md).
