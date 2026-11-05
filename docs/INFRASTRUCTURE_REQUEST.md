@@ -1,8 +1,8 @@
-# Infrastructure request issue draft
+# Infrastructure evaluation request
 
-Status: prepared locally, 4 November 2026. No issue has been posted and no infrastructure/DNS has been changed. Target: [XeoNote/Infrastructure-](https://github.com/XeoNote/Infrastructure-/). Licence: AGPL-3.0-only. Existing hardware only; zero additional service cost.
+Status: posted with founder authorization on 5 November 2026 as [issue #310](https://github.com/XeoNote/Infrastructure-/issues/310). The request is open; target allocation and infrastructure response are pending. No infrastructure/DNS change has been performed by the application team. Target: [XeoNote/Infrastructure-](https://github.com/XeoNote/Infrastructure-/). Licence: AGPL-3.0-only. Existing hardware only; zero additional service cost.
 
-Suggested title: **Allocate a private CPU-only evaluation target for Vuzmi alpha**
+Posted title: **Allocate a private CPU-only evaluation target for Vuzmi alpha**
 
 ## Requested outcome
 
@@ -57,4 +57,4 @@ Please respond with the chosen existing target/OS, resource allocation, applicat
 - [ ] Encrypted operational backup plus restore/session-revocation drill passes on a separate empty target.
 - [ ] Rollback procedure verified with matching application version and backup; incompatible migrations fail closed.
 
-Supporting application records: [DEVELOPMENT.md](DEVELOPMENT.md), [STATUS.md](STATUS.md), [ARCHITECTURE.md](ARCHITECTURE.md), [RECOVERY.md](RECOVERY.md) and [LICENSING.md](LICENSING.md). Attach the final reviewed commit/source hash when posting. This draft authorizes no spend, posting, deployment, DNS change or production exposure.
+Supporting application records: [DEVELOPMENT.md](DEVELOPMENT.md), [STATUS.md](STATUS.md), [ARCHITECTURE.md](ARCHITECTURE.md), [RECOVERY.md](RECOVERY.md) and [LICENSING.md](LICENSING.md). The issue includes reviewed application commit `e494dd995c165fe97cb3de697e398a1ada273fc9` and its local source archive SHA-256 `ee09476ea5ba236f892bea8cbcd23b1e4d2248d544f0539b5143ceb41c451eca`. The archive has not been uploaded or attached. This request does not authorize added spend, production deployment, DNS changes or public exposure.

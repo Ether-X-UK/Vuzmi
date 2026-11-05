@@ -37,8 +37,8 @@ npm start
 - [Product](docs/PRODUCT.md), [architecture](docs/ARCHITECTURE.md), [build plan](docs/BUILD_PLAN.md) and [UI design](docs/DESIGN.md).
 - [Delivery status](docs/STATUS.md): exact implemented and verified scope.
 - [Development](docs/DEVELOPMENT.md), [recovery](docs/RECOVERY.md), [licensing](docs/LICENSING.md) and [research](docs/RESEARCH.md).
-- [Infrastructure request](docs/INFRASTRUCTURE_REQUEST.md): an unposted draft for existing hardware and infrastructure staff.
+- [Infrastructure request](docs/INFRASTRUCTURE_REQUEST.md): posted as [infrastructure issue #310](https://github.com/XeoNote/Infrastructure-/issues/310) for private evaluation on existing hardware.
 
 OpenAI and Claude adapters are contract-tested and disabled, with no live calls. Public SaaS, multi-tenant isolation, billing, external connectors, automated operations and selling remain later milestones. Source deletion removes active retrieval data; historical evidence, approved packages and backups remain retained under the disclosed private-alpha boundary.
 
-The local source is licensed; no GitHub repository has been published, infrastructure issue posted, DNS changed or production release performed. Keep this evaluation on loopback until the private-ingress and operational release gates pass.
+The local source is licensed; [infrastructure issue #310](https://github.com/XeoNote/Infrastructure-/issues/310) is posted. No application repository has been published, DNS changed or production release performed. Keep this evaluation on loopback until the private-ingress and operational release gates pass.

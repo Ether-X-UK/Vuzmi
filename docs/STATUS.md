@@ -1,6 +1,6 @@
 # Delivery status
 
-Updated 4 November 2026. The founder accepted the initial interface direction and selected AGPL-3.0-only. This is a verified local alpha foundation, with a concrete infrastructure evaluation handoff prepared. Public SaaS and automated business execution are later milestones.
+Updated 5 November 2026. The founder accepted the initial interface direction and selected AGPL-3.0-only. This is a verified local alpha foundation, with the infrastructure evaluation handoff posted as [issue #310](https://github.com/XeoNote/Infrastructure-/issues/310). Public SaaS and automated business execution are later milestones.
 
 ## Implemented
 
@@ -42,7 +42,7 @@ A previous full restart of Vuzmi-owned PostgreSQL, Ollama, API, worker and web p
 ## Remaining release boundaries
 
 - The founder must choose actual owner credentials through first-run setup. Known test credentials are never installed into the operator auth schema.
-- The prepared [infrastructure request](INFRASTRUCTURE_REQUEST.md) has not been posted. CPU-server/Linux deployment, private ingress/TLS, deployment supervision, separate migration/runtime roles and encrypted off-host operational recovery need target-environment validation.
+- The [infrastructure request](INFRASTRUCTURE_REQUEST.md) was posted with founder authorization on 5 November 2026 as [issue #310](https://github.com/XeoNote/Infrastructure-/issues/310); target allocation/response are pending. CPU-server/Linux deployment, private ingress/TLS, deployment supervision, separate migration/runtime roles and encrypted off-host operational recovery need target-environment validation.
 - Native UI rejection/conflict paths, retained-source citation navigation, backend-loss recovery and large accessibility text sizes need additional device testing; physical-device networking, distribution signing and App Store delivery are unverified. Simulator success is not device/store readiness.
 - Representative retrieval/model quality and content editing require continued evaluation. Citations are traceable context, not proof of factual correctness. Source/profile migrations, large-file sync/OCR and production deletion/backup erasure are not implemented.
 - Public multitenancy, billing, arbitrary workflow graphs, code/IT execution, support integrations, marketing/sales sends, automatic selling and subscription-backed provider sign-in remain future work. No paid model calls, customer messages, infrastructure mutations, DNS changes or public repository release occurred.

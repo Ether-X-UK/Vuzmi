@@ -96,7 +96,7 @@ Open [the combined web/API service](http://127.0.0.1:4310). This starts the API 
 
 `/healthz` is minimal API liveness. `/readyz` additionally requires PostgreSQL-backed execution, a fresh worker heartbeat and configured owner authentication; it deliberately does not claim an Ollama inference passed. Model/embedding readiness remains visible after sign-in. A missing build, database, secret, incompatible migration or occupied port fails startup.
 
-For later infrastructure handoff use [INFRASTRUCTURE_REQUEST.md](INFRASTRUCTURE_REQUEST.md), still an unposted draft. Private ingress/TLS, Linux packaging validation, separate migration/runtime roles and encrypted off-host backups remain release gates. A native local package is not public SaaS readiness.
+For later infrastructure handoff use [INFRASTRUCTURE_REQUEST.md](INFRASTRUCTURE_REQUEST.md), posted with founder authorization as [issue #310](https://github.com/XeoNote/Infrastructure-/issues/310). Private ingress/TLS, Linux packaging validation, separate migration/runtime roles and encrypted off-host backups remain release gates. A native local package is not public SaaS readiness.
 
 ## Verification and recovery
 

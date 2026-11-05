@@ -24,3 +24,7 @@ Generated copy is unverified and can contain semantic mistakes despite valid cit
 Active-source deletion does not erase historical excerpts, approved documents, downloaded copies or old backups. Backups are private but unencrypted; encrypted off-host operational recovery, target CPU/Linux deployment and private ingress/TLS remain handoff gates. The actual owner account is intentionally unconfigured until the founder chooses credentials privately. Physical-device/App Store delivery, public multitenancy, billing, external integrations and automated selling are future work.
 
 Run locally using [DEVELOPMENT.md](DEVELOPMENT.md). The prepared [infrastructure issue draft](INFRASTRUCTURE_REQUEST.md) remains unposted. Source licensing does not imply that a repository or service has been published.
+
+## Handoff update — 5 November 2026
+
+The founder authorized posting the private evaluation request. It is now [infrastructure issue #310](https://github.com/XeoNote/Infrastructure-/issues/310), containing the verified application commit and local source-archive hash. Target allocation and response are pending; posting the request is not evidence of deployment or DNS changes.
