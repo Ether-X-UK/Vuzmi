@@ -12,6 +12,7 @@ Use Node.js 22.13+ in the 22.x line, npm 10, native PostgreSQL 16 with pgvector 
 git clone https://github.com/Ether-X-UK/Vuzmi.git
 cd Vuzmi
 npm ci
+npm run package:source
 npm run services:start
 # One-time model downloads if absent:
 OLLAMA_HOST=http://127.0.0.1:11435 ollama pull qwen3.5:4b
@@ -29,6 +30,7 @@ npm run test:postgres
 npm run export:ios
 npm run test:recovery
 npm run build
+npm run package:source
 npm start
 ```
 

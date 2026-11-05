@@ -4,6 +4,8 @@ Status: posted with founder authorization on 5 November 2026 as [issue #310](htt
 
 Posted title: **Allocate a private CPU-only evaluation target for Vuzmi alpha**
 
+Source update, 5 November 2026: the founder subsequently authorized public publication at [Ether-X-UK/Vuzmi](https://github.com/Ether-X-UK/Vuzmi), and hosted Linux checks now pass. The original request below preserves the earlier handoff state.
+
 ## Requested outcome
 
 Provide an isolated evaluation target on the existing estate for Vuzmi's private single-owner alpha. Its workflow is owned product text/Markdown → local retrieval and Ollama draft → human review → exact approved local package. It does not execute host commands, deploy applications, send customer messages, publish campaigns or bill customers.

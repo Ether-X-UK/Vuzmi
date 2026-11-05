@@ -29,6 +29,7 @@ Clone the repository, then run from its root:
 git clone https://github.com/Ether-X-UK/Vuzmi.git
 cd Vuzmi
 npm ci
+npm run package:source
 npm run services:start
 # One-time downloads only when absent:
 OLLAMA_HOST=http://127.0.0.1:11435 ollama pull qwen3.5:4b
@@ -92,6 +93,7 @@ PostgreSQL persists aggregates, append-only events, approvals, retained evidence
 
 ```sh
 npm run build
+npm run package:source
 npm start
 ```
 

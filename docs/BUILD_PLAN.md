@@ -209,3 +209,5 @@ Completed locally: 110 unit/API/provider/native-transport/source/startup/web-ses
 ## Public source and checks increment — 5 November 2026
 
 The founder authorized creation and public publication of Ether-X-UK/Vuzmi; reviewed baseline `864b61d` is published. Add clone/setup instructions and keep repository status accurate. Following Architecture§22, put the existing checks on a standard public Ubuntu runner without credentials, models, cache or artifact uploads. Gate completion on an actual green hosted run covering fresh dependency installation, strict code checks/build, native PostgreSQL/pgvector tests and restore drill, iOS bundle export and source packaging. Keep actual inference, Xcode compilation and private infrastructure acceptance distinct.
+
+Completed: [hosted run 42008424308](https://github.com/Ether-X-UK/Vuzmi/actions/runs/42008424308) passes on application baseline `78f28c1` with 111 unit/client/contract tests, 53 PostgreSQL tests, backup/restore, web build, iOS export and source packaging. Ubuntu PGXS needs the matching Clang 19/LLVM 19 toolchain, now installed explicitly. Actual target allocation and operational validation remain pending.

@@ -16,7 +16,7 @@ Vuzmi now turns an owned product brief and selected knowledge into a locally gen
 
 ## Verification
 
-The current checks pass 110 unit/API/source/startup/native-transport/web-session tests and 53 real PostgreSQL/auth/knowledge/outbox/revision tests, strict root/mobile TypeScript, web production build and native bundle export. The baseline signed Release Simulator compilation remains valid compilation evidence; no fresh Xcode build was run for the web/shared revision increment. A real local embedding/generation browser mission produced a downloaded package matching its approved database content and evidence. Separate synthetic browser checks verified human revision, expired-session recovery, concurrent conflict and exact approved download; a native dump/restore drill also preserved revision history and package bytes between two disposable databases. See [STATUS.md](STATUS.md) for exact scope and limitations.
+The current checks pass 111 unit/API/source/startup/native-transport/web-session tests and 53 real PostgreSQL/auth/knowledge/outbox/revision tests, strict root/mobile TypeScript, web production build and native bundle export. The baseline signed Release Simulator compilation remains valid compilation evidence; no fresh Xcode build was run for the web/shared revision increment. A real local embedding/generation browser mission produced a downloaded package matching its approved database content and evidence. Separate synthetic browser checks verified human revision, expired-session recovery, concurrent conflict and exact approved download; a native dump/restore drill also preserved revision history and package bytes between two disposable databases. See [STATUS.md](STATUS.md) for exact scope and limitations.
 
 ## Evaluation boundary
 
@@ -32,4 +32,4 @@ The founder authorized posting the private evaluation request. It is now [infras
 
 ## Public source update — 5 November 2026
 
-The founder authorized public AGPL publication at [Ether-X-UK/Vuzmi](https://github.com/Ether-X-UK/Vuzmi). Reviewed application baseline `864b61d` is published with its checked commit history, licence, lockfile and self-host instructions. GitHub publication makes the code available; it does not deploy a service or authorize a production launch. Automated Linux checks are being added; their actual run result is recorded in STATUS.md.
+The founder authorized public AGPL publication at [Ether-X-UK/Vuzmi](https://github.com/Ether-X-UK/Vuzmi). Reviewed application baseline `864b61d` is published with its checked commit history, licence, lockfile and self-host instructions. [Hosted Ubuntu checks](https://github.com/Ether-X-UK/Vuzmi/actions/runs/42008424308) pass for subsequent baseline `78f28c1`, including real native PostgreSQL/pgvector fixtures and recovery. The harness now also stops a partially started fixture before deleting its directory. GitHub publication and fixture verification do not deploy a service or authorize a production launch.
