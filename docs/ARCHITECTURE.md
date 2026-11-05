@@ -389,7 +389,7 @@ Live import verification also exposed an exhausted retrieval budget yielding a o
 
 ## 25. Development change workflow — 5 November 2026
 
-Founder-authorized next increment. Proposed until its gates pass: owner task/optional public Vuzmi issue → immutable code context → local structured code proposal → isolated baseline/candidate checks → exact human review → saved local patch package. The first real acceptance task repairs the web API client's unreadable401 session-expiry handling. This is a complete, deliberately narrow development profile, not arbitrary repository execution.
+Founder-authorized increment, implemented and verified locally and on hosted Linux as recorded in STATUS.md: owner task/optional public Vuzmi issue → immutable code context → local structured code proposal → isolated baseline/candidate checks → exact human review → saved local patch package. The first real acceptance task repairs the web API client's unreadable401 session-expiry handling. This is a complete, deliberately narrow development profile, not arbitrary repository execution.
 
 Add a separate versioned `development-patch@1` aggregate and `/v1/development` module in the existing control plane. Reuse workspace, owner, event and decision semantics; keep founder-release runs, native document approvals and existing outbox bytes unchanged. Add migration4, development aggregates/events, queue admission, runtime/attempt ownership and approved package persistence. Initial web development navigation has its own list/detail; native development review is deferred and these jobs never enter its document-approval endpoint.
 

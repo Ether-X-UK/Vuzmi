@@ -44,6 +44,10 @@ export async function request(
       0,
     );
   }
+
+  if (response.status === 401)
+    window.dispatchEvent(new Event("vuzmi:session-expired"));
+
   let body: unknown;
   try {
     body = await response.json();
@@ -55,8 +59,6 @@ export async function request(
     );
   }
   if (!response.ok) {
-    if (response.status === 401)
-      window.dispatchEvent(new Event("vuzmi:session-expired"));
     const error = (body as { error?: { message?: string; code?: string } })
       ?.error;
     throw new ApiError(
