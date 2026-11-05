@@ -1,0 +1,66 @@
+name: Alpha checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alpha-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Linux alpha checks
+    # Standard public runners are free. Do not allocate one if visibility changes.
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.23.1"
+          package-manager-cache: false
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck, test and build web
+        run: npm run check
+
+      - name: Install native PostgreSQL 16 and pinned pgvector
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-16 postgresql-client-16 postgresql-server-dev-16 build-essential
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+          git -c advice.detachedHead=false clone --branch v0.8.7 --depth 1 https://github.com/pgvector/pgvector.git "$RUNNER_TEMP/vuzmi-pgvector"
+          test "$(git -C "$RUNNER_TEMP/vuzmi-pgvector" rev-parse HEAD)" = f37c13f68b57d2c3472b2214fbcff699d6d34876
+          make -C "$RUNNER_TEMP/vuzmi-pgvector" PG_CONFIG=/usr/lib/postgresql/16/bin/pg_config
+          sudo make -C "$RUNNER_TEMP/vuzmi-pgvector" PG_CONFIG=/usr/lib/postgresql/16/bin/pg_config install
+
+      - name: Test durable PostgreSQL workflows and auth
+        run: npm run test:postgres
+
+      - name: Verify native backup and restore
+        run: npm run test:recovery
+
+      - name: Export iOS JavaScript bundle
+        run: npm run export:ios
+
+      - name: Verify matching source packaging
+        run: npm run package:source

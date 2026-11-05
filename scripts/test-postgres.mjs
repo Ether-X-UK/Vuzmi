@@ -16,8 +16,10 @@ try {
       server.close((error) => (error ? reject(error) : resolve(address.port)));
     });
   });
-  const connectionString = startPostgres(stateDir, port);
+  // Startup can fail after pg_ctl starts the server (for example, a missing
+  // vector extension). Always attempt to stop it before removing test state.
   started = true;
+  const connectionString = startPostgres(stateDir, port);
   const testDir = join(root, "packages/runtime/test");
   const tests = (await readdir(testDir))
     .filter((name) => name.endsWith(".test.ts"))

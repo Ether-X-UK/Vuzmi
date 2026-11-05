@@ -153,6 +153,6 @@ The sales automation loop is eventually: permitted lead source → qualification
 - Choose a concrete resource allocation and deployment handoff when local readiness is demonstrated; the infrastructure repository and ample CPU/RAM are confirmed.
 - Validate later CPU-server capacity and representative workflow quality; the local M5 generation and embedding smoke checks have passed.
 - Whether this account has any verified eligible API credits or subscription sign-in integration; zero added cost remains mandatory.
-- Public source repository destination and hosted pricing/support commitments; AGPL-3.0-only is selected.
+- Hosted pricing/support commitments. AGPL-3.0-only and public publication at [Ether-X-UK/Vuzmi](https://github.com/Ether-X-UK/Vuzmi) are selected; the reviewed alpha source was published with founder authorization on 5 November 2026.
 - Required first external integration, if any; the alpha uses a local change brief and artifact outbox.
 - iOS expectations: a native Expo companion is planned; public distribution is outside the alpha promise.

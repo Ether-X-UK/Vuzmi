@@ -9,6 +9,8 @@ Vuzmi's larger direction is coordinated development, IT operations, support, mar
 Use Node.js 22.13+ in the 22.x line, npm 10, native PostgreSQL 16 with pgvector 0.8.7, and local Ollama. Follow [development instructions](docs/DEVELOPMENT.md) for native extension installation.
 
 ```sh
+git clone https://github.com/Ether-X-UK/Vuzmi.git
+cd Vuzmi
 npm ci
 npm run services:start
 # One-time model downloads if absent:
@@ -41,4 +43,4 @@ npm start
 
 OpenAI and Claude adapters are contract-tested and disabled, with no live calls. Public SaaS, multi-tenant isolation, billing, external connectors, automated operations and selling remain later milestones. Source deletion removes active retrieval data; historical evidence, approved packages and backups remain retained under the disclosed private-alpha boundary.
 
-The local source is licensed; [infrastructure issue #310](https://github.com/XeoNote/Infrastructure-/issues/310) is posted. No application repository has been published, DNS changed or production release performed. Keep this evaluation on loopback until the private-ingress and operational release gates pass.
+The source is public at [Ether-X-UK/Vuzmi](https://github.com/Ether-X-UK/Vuzmi), published with founder authorization on 5 November 2026 under AGPL-3.0-only. [Infrastructure issue #310](https://github.com/XeoNote/Infrastructure-/issues/310) requests a private evaluation target. Keep this evaluation on loopback until the private-ingress and operational release gates pass. Repository publication does not deploy the application or change DNS.

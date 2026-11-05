@@ -29,3 +29,7 @@ Run locally using [DEVELOPMENT.md](DEVELOPMENT.md). The [infrastructure evaluati
 ## Handoff update — 5 November 2026
 
 The founder authorized posting the private evaluation request. It is now [infrastructure issue #310](https://github.com/XeoNote/Infrastructure-/issues/310), containing the verified application commit and local source-archive hash. Target allocation and response are pending; posting the request is not evidence of deployment or DNS changes.
+
+## Public source update — 5 November 2026
+
+The founder authorized public AGPL publication at [Ether-X-UK/Vuzmi](https://github.com/Ether-X-UK/Vuzmi). Reviewed application baseline `864b61d` is published with its checked commit history, licence, lockfile and self-host instructions. GitHub publication makes the code available; it does not deploy a service or authorize a production launch. Automated Linux checks are being added; their actual run result is recorded in STATUS.md.

@@ -23,9 +23,11 @@ Installation writes to the selected PostgreSQL extension directory and may need 
 
 ## Quickstart
 
-From the repository root:
+Clone the repository, then run from its root:
 
 ```sh
+git clone https://github.com/Ether-X-UK/Vuzmi.git
+cd Vuzmi
 npm ci
 npm run services:start
 # One-time downloads only when absent:
@@ -109,5 +111,7 @@ npm run test:recovery
 ```
 
 `check` runs strict root/mobile TypeScript, core/provider/API/native transport fixtures and the production web build. Provider fixtures are not live calls. `test:postgres` creates a disposable private cluster on a free port and removes it afterward; it covers real queue/transaction behavior, knowledge lifecycle, exact decisions, auth bootstrap/session boundaries, migration drift and recovery regressions. It does not create the operator's owner account. The iOS export bundles JavaScript; report native compilation separately.
+
+The public repository's [Alpha checks workflow](https://github.com/Ether-X-UK/Vuzmi/actions/workflows/checks.yml) runs these commands plus source packaging on push, pull request and manual dispatch. It uses a standard Ubuntu 24.04 runner, Node 22.23.1, native PostgreSQL 16 and the verified pgvector v0.8.7 commit. Official actions are pinned by commit, repository access is read-only, and dependency cache/artifact uploads are disabled. No secrets, Ollama downloads or model calls are needed. The job skips private repository events; standard public runner usage is free under [GitHub's current billing terms](https://docs.github.com/en/billing/concepts/product-billing/github-actions). Linux fixture checks do not establish actual CPU inference latency, private ingress or Xcode compilation.
 
 [RECOVERY.md](RECOVERY.md) documents private whole-database backup and restore into a separate empty target. A backup is sensitive and unencrypted. A restore must not wipe the original database, start inference, or silently expose restored sessions. Deletion can be rolled back by an older backup; public retention promises require a separate gate.
