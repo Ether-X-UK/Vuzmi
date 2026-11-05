@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends postgresql-16 postgresql-client-16 postgresql-server-dev-16 build-essential
+          sudo apt-get install --yes --no-install-recommends postgresql-16 postgresql-client-16 postgresql-server-dev-16 build-essential clang-19 llvm-19
           echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
           git -c advice.detachedHead=false clone --branch v0.8.7 --depth 1 https://github.com/pgvector/pgvector.git "$RUNNER_TEMP/vuzmi-pgvector"
           test "$(git -C "$RUNNER_TEMP/vuzmi-pgvector" rev-parse HEAD)" = f37c13f68b57d2c3472b2214fbcff699d6d34876
