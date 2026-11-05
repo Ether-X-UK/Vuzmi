@@ -63,7 +63,7 @@ Dates are a working schedule. Acceptance gates determine readiness; a missed gat
 
 - [x] Architecture, product boundary, and primary UI flows are recorded before implementation.
 - [x] Workspace packages build and type-check with reproducible dependency installation.
-- [ ] Backend dependencies start through documented self-host commands.
+- [x] Backend dependencies start through documented self-host commands on the local Mac testbed.
 - [x] The local Ollama service is running/reachable and a suitable model loads successfully within existing hardware and the zero-additional-cost constraint.
 - [x] The required database/runtime works on the local testbed despite the initially unavailable Docker daemon; any infrastructure dependency has an identified owner.
 - [x] All exercised paths add no service cost, and paid provider routes are disabled by default.
@@ -218,4 +218,6 @@ Read-only review found overlapping polling can suppress a slow backend's errors,
 
 The analogous web proposal replacement was confirmed by static review. Apply the same explicit re-review gate to polled and conflict-recovered proposals, preserving the existing editor/session recovery. Test changed, unchanged, terminal and repeated-replacement boundaries; include strict web checks and production build.
 
-Implemented and locally verified: 134 unit/client/contract tests pass, including 23 new recovery tests, with strict root/mobile TypeScript, web build, iOS export (801 modules) and fresh ad-hoc-signed Xcode Release Simulator compilation. New control interaction checks remain pending while the founder owns the local setup handoff; existing earlier native/browser UI evidence is recorded separately. No owner account was created by this work.
+Implemented and locally verified: 134 unit/client/contract tests pass, including 23 new recovery tests, with strict root/mobile TypeScript, web build, iOS export (801 modules) and fresh ad-hoc-signed Xcode Release Simulator compilation. At the initial code handoff, interaction checks remained pending and the owner setup was left to the founder; subsequent results follow below.
+
+Subsequent interactive verification passed on isolated synthetic data: web/native A/B/C proposal replacement and renewed acknowledgment, exact web C approval, native timeout with disabled decisions followed by successful refresh, native C rejection with no artifact, and session-revocation gates in both clients. Individual native 409, decision/conflict 401 and uncertain-mutation timeout paths remain fixture-tested; large accessibility text and physical-device behavior remain unverified. The test server, three disposable schemas and synthetic credentials were removed afterward. The founder independently completed actual owner setup and signed in. A grounded real-model package was generated and corrected, retaining the original model output; founder editorial approval remains a separate step.
