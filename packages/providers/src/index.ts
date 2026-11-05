@@ -7,7 +7,13 @@
  * https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features
  */
 
-import { embeddingProfileSchema, evidenceSnapshotSchema } from "@vuzmi/core";
+import {
+  DraftDocumentError,
+  embeddingProfileSchema,
+  evidenceSnapshotSchema,
+  renderDraftDocument,
+  validateDraftCitations,
+} from "@vuzmi/core";
 import type { EmbeddingProfile, EvidenceSnapshot } from "@vuzmi/core";
 
 export type ProviderErrorCode =
@@ -782,69 +788,13 @@ function checkedEvidence(
 }
 
 function validateCitations(content: string, evidence?: EvidenceSnapshot): void {
-  const allowed = new Set(evidence?.items.map((item) => item.citation) ?? []);
-  let referenced = false;
-  for (const match of content.matchAll(/\[([^\]\r\n]+)\]/g)) {
-    const label = match[1];
-    // Leave ordinary Markdown links and unchecked task boxes alone, while refusing
-    // citation-like IDs, grouped references and numeric footnotes we did not supply.
-    if (!/^(?:[A-Za-z][A-Za-z0-9_-]*\d|\^?\d)/.test(label)) continue;
-    if (
-      !allowed.has(label) ||
-      content.slice(match.index! + match[0].length).startsWith("(")
-    ) {
-      throw new ProviderError(
-        "INVALID_CITATION",
-        "The local draft used an unsupported reference ID. No draft was accepted; review the evidence and try again.",
-      );
-    }
-    referenced = true;
+  try {
+    validateDraftCitations(content, evidence);
+  } catch (error) {
+    if (error instanceof DraftDocumentError)
+      throw new ProviderError("INVALID_CITATION", error.message);
+    throw error;
   }
-  if (evidence && !referenced) {
-    throw new ProviderError(
-      "INVALID_CITATION",
-      "The local draft did not cite its selected evidence. No draft was accepted; review the evidence and try again.",
-    );
-  }
-}
-
-function jsonFence(value: unknown): string {
-  const json = JSON.stringify(value, null, 2);
-  const longest = Math.max(
-    0,
-    ...Array.from(json.matchAll(/`+/g), (match) => match[0].length),
-  );
-  const fence = "`".repeat(Math.max(3, longest + 1));
-  return `${fence}json\n${json}\n${fence}`;
-}
-
-function references(evidence: EvidenceSnapshot): string {
-  const sections = [
-    "## Vuzmi reference record",
-    "This appendix was attached by Vuzmi from the selected evidence snapshot. Citations identify supplied claims, not independently verified outcomes.",
-    jsonFence({
-      policy: evidence.policy,
-      retrievedAt: evidence.retrievedAt,
-      embeddingProfile: evidence.profile,
-    }),
-  ];
-  for (const item of evidence.items) {
-    sections.push(
-      `### [${item.citation}] ${item.kind === "source" ? "Source" : "Memory"} reference`,
-      jsonFence({
-        kind: item.kind,
-        ownerId: item.ownerId,
-        title: item.title,
-        revision: item.revision,
-        chunkIndex: item.chunkIndex,
-        lineStart: item.lineStart,
-        lineEnd: item.lineEnd,
-        contentHash: item.contentHash,
-        excerpt: item.text,
-      }),
-    );
-  }
-  return sections.join("\n\n");
 }
 
 function count(value: unknown): number | null {
@@ -872,10 +822,7 @@ function markdown(value: unknown, evidence?: EvidenceSnapshot): string {
   )
     throw invalidResponse();
   validateCitations(content, evidence);
-  const provenance = evidence
-    ? "> Local Ollama draft — unverified. This run used selected source/memory excerpts; their claims remain unverified. No repository inspection, tests, deployment, publication, or customer contact was performed."
-    : "> Local Ollama draft — unverified. This run did not inspect a repository, retrieve knowledge, run tests, deploy, publish, or contact customers.";
-  return `${provenance}\n\n${content}${evidence ? `\n\n${references(evidence)}` : ""}`;
+  return renderDraftDocument(content, evidence);
 }
 
 export async function generateReleaseBrief(

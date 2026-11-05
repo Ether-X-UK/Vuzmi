@@ -4,10 +4,16 @@ import {
   evidenceSnapshotSchema,
 } from "./knowledge.js";
 import { founderReleaseWorkflowRef, workflowRefSchema } from "./workflow.js";
+import {
+  draftRevisionSchema,
+  validateDraftRevisionIntegrity,
+} from "./draft-revision.js";
 export * from "./knowledge.js";
 export * from "./auth.js";
 export * from "./outbox.js";
 export * from "./workflow.js";
+export * from "./document.js";
+export * from "./draft-revision.js";
 
 export const domainSchema = z.enum([
   "build",
@@ -92,6 +98,7 @@ export const runSchema = z.object({
   events: z.array(runEventSchema),
   knowledge: evidenceSelectionSchema.optional(),
   evidence: evidenceSnapshotSchema.optional(),
+  draftRevisions: z.array(draftRevisionSchema).max(10).optional(),
   attemptId: z.string().optional(),
   usage: z
     .object({
@@ -169,9 +176,7 @@ export type RuntimeInfo = z.infer<typeof runtimeInfoSchema>;
 export class DomainError extends Error {
   constructor(
     public readonly code:
-      | "STALE_APPROVAL"
-      | "ALREADY_DECIDED"
-      | "INVALID_STATE",
+      "STALE_APPROVAL" | "ALREADY_DECIDED" | "INVALID_STATE",
     message: string,
   ) {
     super(message);
@@ -659,5 +664,6 @@ export function parseRunIntegrity(
     throw new Error("Unexpected artifact before generation.");
   if (run.status === "running" && !run.attemptId)
     throw new Error("Missing generation attempt identity.");
+  validateDraftRevisionIntegrity(run, fingerprint);
   return run;
 }

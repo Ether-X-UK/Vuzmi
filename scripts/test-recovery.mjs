@@ -7,6 +7,10 @@ import { join } from "node:path";
 import { Client } from "pg";
 import { AuthService } from "../packages/auth/src/index.ts";
 import {
+  createApprovedPackage,
+  renderDraftDocument,
+} from "../packages/core/src/index.ts";
+import {
   PostgresRunRepository,
   processIndexJob,
   processRunJob,
@@ -152,24 +156,40 @@ try {
       },
       retryCount: 0,
     },
-    generate: async () => ({
-      content:
+    generate: async ({ evidence }) => ({
+      content: renderDraftDocument(
         "# Proposed local release\n\nOwner review is required [S1] [M1].\n\nSynthetic recovery fixture; no inference, tests, or deployment was performed.",
+        evidence,
+      ),
       usage: { inputTokens: null, outputTokens: null, durationMs: null },
     }),
   });
   const proposed = await repository.get("local-workspace", run.id);
   assert.equal(proposed.status, "waiting_approval");
+  const amended = await repository.amend(
+    "local-workspace",
+    run.id,
+    {
+      editId: randomUUID(),
+      revision: proposed.revision,
+      fingerprint: proposed.proposal.fingerprint,
+      body: "# Revised local release\n\nOwner review is required [S1] [M1].\n\nSynthetic recovery fixture; local storage alone does not authorize publication. No inference, tests, or deployment was performed.\n",
+      reason: "Clarify the local storage approval boundary.",
+    },
+    { id: owner.id, name: owner.name },
+  );
+  assert.equal(amended.draftRevisions.length, 1);
   const expectedRun = await repository.decide(
     "local-workspace",
     run.id,
     {
       decision: "approve",
-      revision: proposed.revision,
-      fingerprint: proposed.proposal.fingerprint,
+      revision: amended.revision,
+      fingerprint: amended.proposal.fingerprint,
     },
     { id: owner.id, name: owner.name },
   );
+  const expectedPackage = await createApprovedPackage(expectedRun);
   const expectedSource = await repository.knowledge.getSource(
     "local-workspace",
     source.id,
@@ -321,6 +341,12 @@ try {
     expectedRun,
   );
   assert.deepEqual(
+    await createApprovedPackage(
+      await restoredRepository.get("local-workspace", run.id),
+    ),
+    expectedPackage,
+  );
+  assert.deepEqual(
     await restoredRepository.knowledge.getSource("local-workspace", source.id),
     expectedSource,
   );
@@ -358,7 +384,7 @@ try {
     expectedRun,
   );
   console.info(
-    "Recovery drill passed: isolated native dump/restore, permission/checksum/empty-target guards, source/memory/vectors, exact run/artifact/fingerprint/revision/events, owner/session binding, session revocation, and pending-job quarantine.",
+    "Recovery drill passed: isolated native dump/restore, permission/checksum/empty-target guards, source/memory/vectors, exact run/artifact/fingerprint/revision/events and human revision history/package, owner/session binding, session revocation, and pending-job quarantine.",
   );
   console.info(
     "Only disposable clusters and synthetic fixtures were used. No operator database, model, or cloud service was contacted.",

@@ -3,6 +3,10 @@ import { parseRunIntegrity, runSchema } from "./index.js";
 import type { Run } from "./index.js";
 import { evidenceSnapshotSchema } from "./knowledge.js";
 import { workflowRefSchema } from "./workflow.js";
+import {
+  draftRevisionIntegrityInputs,
+  draftRevisionSchema,
+} from "./draft-revision.js";
 
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const timestamp = z.string().datetime();
@@ -39,6 +43,7 @@ export const approvedPackageSchema = z.object({
     })
     .nullable(),
   evidence: evidenceSnapshotSchema.nullable(),
+  draftRevisions: z.array(draftRevisionSchema).max(10).default([]),
   documents: z.tuple([
     z.object({
       id: z.string(),
@@ -134,10 +139,19 @@ export async function createApprovedPackage(
     );
   }
   const { kind, destination, content } = candidate.proposal;
-  const inputs = new Set([
-    JSON.stringify({ kind, destination, content }),
-    ...(candidate.evidence?.items.map((item) => item.text) ?? []),
-  ]);
+  let inputs: Set<string>;
+  try {
+    inputs = new Set([
+      JSON.stringify({ kind, destination, content }),
+      ...(candidate.evidence?.items.map((item) => item.text) ?? []),
+      ...draftRevisionIntegrityInputs(candidate),
+    ]);
+  } catch {
+    throw new OutboxError(
+      "OUTBOX_INVALID_ARTIFACT",
+      "The retained draft revision history could not be reconstructed.",
+    );
+  }
   // The shared integrity validator is synchronous. Precompute every hash it
   // verifies using native Web Crypto, then require a known input on callback.
   const hashes = new Map(
@@ -178,6 +192,7 @@ export async function createApprovedPackage(
     route: run.route,
     usage: run.usage ?? null,
     evidence: run.evidence ?? null,
+    draftRevisions: run.draftRevisions ?? [],
     documents: [
       {
         id: artifact.id,

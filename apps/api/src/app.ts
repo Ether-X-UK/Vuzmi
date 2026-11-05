@@ -10,6 +10,8 @@ import {
   decisionSchema,
   decideRun,
   DomainError,
+  DraftRevisionError,
+  reviseDraftSchema,
 } from "@vuzmi/core";
 import type {
   Run,
@@ -222,6 +224,10 @@ export async function buildApp(
         .code(error.statusCode)
         .send({ error: { code: error.code, message: error.message } });
     if (error instanceof KnowledgeError)
+      return reply
+        .code(error.statusCode)
+        .send({ error: { code: error.code, message: error.message } });
+    if (error instanceof DraftRevisionError)
       return reply
         .code(error.statusCode)
         .send({ error: { code: error.code, message: error.message } });
@@ -446,6 +452,34 @@ export async function buildApp(
   app.get<{ Params: { id: string } }>("/v1/runs/:id", async (request) => ({
     run: await getRun(request.params.id),
   }));
+
+  app.patch<{ Params: { id: string } }>(
+    "/v1/runs/:id/draft",
+    { bodyLimit: 160 * 1024 },
+    async (request) => {
+      const input = reviseDraftSchema.safeParse(request.body);
+      if (!input.success)
+        throw new HttpError(
+          400,
+          "INVALID_DRAFT",
+          "Provide an edit UUID, the displayed revision and fingerprint, a draft body within 64 KiB, and a reason of 3–600 characters.",
+        );
+      if (!repository)
+        throw new HttpError(
+          409,
+          "DRAFT_NOT_EDITABLE",
+          "Draft revision requires a saved local Ollama proposal in PostgreSQL.",
+        );
+      return {
+        run: await repository.amend(
+          "local-workspace",
+          request.params.id,
+          input.data,
+          owners.get(request),
+        ),
+      };
+    },
+  );
 
   app.post<{ Params: { id: string } }>(
     "/v1/runs/:id/decisions",

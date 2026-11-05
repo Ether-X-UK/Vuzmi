@@ -19,7 +19,7 @@ npm run dev
 
 Open [the web client](http://127.0.0.1:5173). First-run setup uses the private key in `.data/dev/owner-setup-key`; choose your own owner credentials. The helper owns private local PostgreSQL and a cloud-disabled Ollama daemon on 11435, leaving the user's normal11434 service untouched. Ctrl-C stops clients/API/worker; `npm run services:stop` stops the owned dependencies while preserving data.
 
-In **Knowledge & memory**, add owned text/Markdown and wait for indexing. Create a **Local Ollama** mission with explicit evidence selections. Review the actual citations and document, then approve to save those exact bytes. **Local outbox** downloads the approved Markdown with its hashes, provenance, retained evidence and decision record. Supplied claims and model output remain unverified.
+In **Knowledge & memory**, add owned text/Markdown and wait for indexing. Create a **Local Ollama** mission with explicit evidence selections. Review the actual citations and document. Use **Revise draft** to correct its body with a recorded reason, then approve the exact saved revision. **Local outbox** downloads the approved Markdown with its hashes, provenance, retained evidence, revision history and decision record. Supplied claims and model output remain unverified.
 
 ```sh
 npm run check

@@ -20,7 +20,7 @@
     "services:start": "node scripts/dev-services.mjs start",
     "services:stop": "node scripts/dev-services.mjs stop",
     "typecheck": "tsc --noEmit && npm run typecheck --workspace @vuzmi/mobile",
-    "test": "node --import tsx --test packages/core/test/*.test.ts packages/providers/test/*.test.ts apps/api/test/*.test.ts apps/mobile/test/*.test.ts",
+    "test": "node --import tsx --test packages/core/test/*.test.ts packages/providers/test/*.test.ts apps/api/test/*.test.ts apps/mobile/test/*.test.ts apps/web/test/*.test.ts",
     "export:ios": "npm run export:ios --workspace @vuzmi/mobile",
     "dev:ios": "EXPO_NO_TELEMETRY=1 npm run ios --workspace @vuzmi/mobile",
     "test:postgres": "node scripts/test-postgres.mjs",

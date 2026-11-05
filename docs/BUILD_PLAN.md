@@ -199,3 +199,9 @@ The product goal is extensive automation. The release process must continue to d
 | iOS distribution expectation           | Expo companion with local tooling; no paid build/App Store plan assumed                                                                                                                                      | Actual local build availability and companion scope                                        |
 
 Revise the plan as remaining inputs arrive. The founder mission, zero-added-cost constraint, trust boundaries, and truthful reporting remain requirements.
+
+## Follow-on local slice — human revision, 5 November 2026
+
+The verified alpha draft contained semantic wording errors despite correct retrieval/citations. Before broadening external automation, let the owner correct the draft locally while preserving original model output, evidence, actor provenance and approval fences. Architecture§21 and Design§16 precede implementation. Gate this slice on exact-byte amended download, stale/conflicting replay, concurrent edit/approval, terminal immutability, retained-chain integrity and browser conflict/unsaved-draft behavior. Infrastructure evaluation proceeds through posted issue#310; no external action is added by this local slice.
+
+Completed locally: 110 unit/API/provider/native-transport/source/startup/web-session tests and 53 PostgreSQL tests pass; backup/restore retains the revised aggregate and exact approved package. Browser verification covers real session expiry/reauthentication, competing tabs, deliberate discard and the amended download, including 390px layout. No new inference or external action occurs during a human edit. Representative content quality and the allocated target environment remain separate evaluation gates.

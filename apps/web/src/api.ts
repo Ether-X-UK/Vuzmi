@@ -6,6 +6,7 @@ import {
   type Run,
   type WorkspaceSnapshot,
   type RuntimeInfo,
+  type ReviseDraftInput,
 } from "@vuzmi/core";
 
 export class ApiError extends Error {
@@ -110,4 +111,22 @@ export async function decideRun(
     body: JSON.stringify(input),
   })) as { run: unknown };
   return runSchema.parse(body.run);
+}
+
+export async function reviseDraft(
+  id: string,
+  input: ReviseDraftInput,
+): Promise<Run> {
+  const body = (await request(`/runs/${encodeURIComponent(id)}/draft`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  })) as { run: unknown };
+  const parsed = runSchema.safeParse(body.run);
+  if (!parsed.success)
+    throw new ApiError(
+      "The revised draft response could not be verified. Your save is unconfirmed; retry unchanged or inspect the saved run.",
+      "INVALID_RESPONSE",
+      0,
+    );
+  return parsed.data;
 }

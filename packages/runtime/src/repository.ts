@@ -13,8 +13,15 @@ import {
   exhaustGeneration,
   failGeneration,
   parseRunIntegrity,
+  amendDraft,
 } from "@vuzmi/core";
-import type { CreateRunInput, DecisionInput, Run, Usage } from "@vuzmi/core";
+import type {
+  CreateRunInput,
+  DecisionInput,
+  ReviseDraftInput,
+  Run,
+  Usage,
+} from "@vuzmi/core";
 import {
   INDEX_QUEUE,
   KnowledgeRepository,
@@ -348,6 +355,23 @@ export class PostgresRunRepository {
   ): Promise<Run> {
     const result = await this.change(workspaceId, id, (run) =>
       decideRun(run, input, this.now().toISOString(), actor),
+    );
+    if (!result) throw new RunNotFoundError();
+    return result;
+  }
+
+  async amend(
+    workspaceId: string,
+    id: string,
+    input: ReviseDraftInput,
+    actor?: { id: string; name: string },
+  ): Promise<Run> {
+    const result = await this.change(workspaceId, id, (run) =>
+      amendDraft(run, input, {
+        now: this.now().toISOString(),
+        fingerprint: sha256,
+        actor,
+      }),
     );
     if (!result) throw new RunNotFoundError();
     return result;

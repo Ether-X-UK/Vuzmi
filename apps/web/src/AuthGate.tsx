@@ -8,6 +8,13 @@ import {
 import { authStateSchema, type AuthState } from "@vuzmi/core";
 import { BrandMark } from "./icons";
 import { App } from "./App";
+import {
+  clearDraftSession,
+  confirmDraftSignOut,
+  hasHeldDraft,
+  reconcileDraftOwner,
+  retainedDraft,
+} from "./draftSession";
 
 async function authRequest(path: string, body?: unknown): Promise<unknown> {
   const response = await fetch(path, {
@@ -48,6 +55,13 @@ export function AuthGate() {
           return;
         }
         observedMode.current = result.mode;
+        if (result.mode === "development" || result.user) {
+          reconcileDraftOwner(result.user?.id ?? null);
+          const held = retainedDraft(result.user?.id ?? null);
+          if (held && hasHeldDraft()) {
+            window.location.hash = `/runs/${encodeURIComponent(held.initialRun.id)}`;
+          }
+        }
         setState(result);
         setError(null);
       }
@@ -103,6 +117,9 @@ export function AuthGate() {
     }
   }
   async function signOut() {
+    if (!(await confirmDraftSignOut())) return;
+    const held = retainedDraft(state?.user?.id ?? null);
+    if (held) clearDraftSession(held.id);
     setBusy(true);
     try {
       await authRequest("/api/auth/sign-out", {});
@@ -159,6 +176,13 @@ export function AuthGate() {
             ? "Create the single owner account for this private Vuzmi workspace. Your credentials stay on your backend."
             : "Sign in to orchestrate your next move."}
         </p>
+        {hasHeldDraft() && (
+          <p className="field-help" role="status">
+            An unsaved correction is held only in this tab’s memory. Sign in as
+            the same workspace owner to resume it. Reloading or closing the page
+            discards it; no browser storage is used.
+          </p>
+        )}
         {error && (
           <div className="form-error" role="alert">
             {error}

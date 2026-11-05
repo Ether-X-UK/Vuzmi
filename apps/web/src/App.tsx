@@ -12,6 +12,7 @@ import {
   createRunSchema,
   deriveRunSteps,
   getRunWorkflowLabel,
+  extractDraftBody,
   domainLabels,
   domainSchema,
   type CreateRunInput,
@@ -42,8 +43,16 @@ const ArtifactDocument = lazy(() =>
     default: module.ArtifactDocument,
   })),
 );
+const DraftEditor = lazy(() =>
+  import("./DraftEditor").then((module) => ({ default: module.DraftEditor })),
+);
 import { getKnowledge } from "./knowledgeApi";
 import { EvidencePanel, EvidencePicker, validSelection } from "./Evidence";
+import {
+  openDraftSession,
+  retainedDraft,
+  type DraftSession,
+} from "./draftSession";
 
 type Route = {
   page: "command" | "runs" | "approvals" | "outbox" | "roadmap";
@@ -409,6 +418,7 @@ export function App({
                 onUpdate={updateRun}
                 connected={connected}
                 storage={snapshot.workspace.storage}
+                ownerId={owner?.id ?? null}
               />
             ) : (
               <EmptyState
@@ -1200,16 +1210,38 @@ function RunDetail({
   onUpdate,
   connected,
   storage,
+  ownerId,
 }: {
   run: Run;
   onUpdate: (run: Run) => void;
   connected: boolean;
   storage: WorkspaceSnapshot["workspace"]["storage"];
+  ownerId: string | null;
 }) {
   const [deciding, setDeciding] = useState<"approve" | "reject" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<string | null>(null);
+  const [editing, setEditing] = useState<DraftSession | null>(() => {
+    const held = retainedDraft(ownerId);
+    return held?.initialRun.id === run.id ? held : null;
+  });
+  const [revisionSaved, setRevisionSaved] = useState<string | null>(null);
   const proposal = run.proposal;
+  const revisions = run.draftRevisions ?? [];
+  const humanRevised = revisions.length > 0;
+  const heldDraft = retainedDraft(ownerId);
+  const editableBody =
+    run.mode === "ollama" &&
+    run.status === "waiting_approval" &&
+    run.route.executed &&
+    proposal &&
+    revisions.length < 10
+      ? extractDraftBody(
+          proposal.content,
+          run.evidence,
+          humanRevised ? "human" : "model",
+        )
+      : undefined;
   const documentContent = run.artifact?.content ?? proposal?.content;
   const unresolvedCitations = [
     ...new Set(
@@ -1224,9 +1256,12 @@ function RunDetail({
   useEffect(() => {
     setError(null);
     setCopyState(null);
+    const held = retainedDraft(ownerId);
+    setEditing(held?.initialRun.id === run.id ? held : null);
+    setRevisionSaved(null);
   }, [run.id]);
   const decide = async (decision: "approve" | "reject") => {
-    if (!proposal || run.status !== "waiting_approval") return;
+    if (!proposal || run.status !== "waiting_approval" || editing) return;
     setDeciding(decision);
     setError(null);
     try {
@@ -1293,6 +1328,11 @@ function RunDetail({
           <div className="detail-status-line">
             <StatusBadge status={run.status} />
             <ModeBadge run={run} />
+            {humanRevised && (
+              <span className="draft-human-badge">
+                Human-revised · {revisions.length}
+              </span>
+            )}
           </div>
           <h1>{run.title}</h1>
           <p>
@@ -1313,7 +1353,48 @@ function RunDetail({
               unresolved={unresolvedCitations}
             />
           )}
-          {documentContent !== undefined ? (
+          {heldDraft && heldDraft.initialRun.id !== run.id && (
+            <p className="draft-review-held">
+              An editing session is held in memory in this tab.{" "}
+              <a href={runLink(heldDraft.initialRun)}>
+                Return to that correction
+              </a>{" "}
+              before starting another.
+            </p>
+          )}
+          {revisionSaved && (
+            <p className="draft-saved-feedback" role="status">
+              {revisionSaved}
+            </p>
+          )}
+          {editing ? (
+            <Suspense
+              fallback={<p role="status">Opening the local draft editor…</p>}
+            >
+              <DraftEditor
+                key={editing.id}
+                session={editing}
+                currentRun={run}
+                connected={connected}
+                onObserved={onUpdate}
+                onSaved={(saved) => {
+                  setEditing(null);
+                  onUpdate(saved);
+                  setRevisionSaved(
+                    `Human revision saved at run revision ${saved.revision}. Review the exact saved document before approving.`,
+                  );
+                  window.requestAnimationFrame(() => {
+                    const preview = document.getElementById("artifact-preview");
+                    preview?.focus({ preventScroll: true });
+                    preview?.scrollIntoView({ block: "start" });
+                  });
+                }}
+                onClose={() => {
+                  setEditing(null);
+                }}
+              />
+            </Suspense>
+          ) : documentContent !== undefined ? (
             <section className="artifact-panel">
               <div className="artifact-toolbar">
                 <div>
@@ -1365,7 +1446,9 @@ function RunDetail({
                 <div className="provider-output-notice">
                   <Icon name="alert" size={17} />
                   <p>
-                    Unverified local model output. Review every factual claim.
+                    {humanRevised
+                      ? "Human-revised draft. Review every factual claim. The original model output is retained in revision history."
+                      : "Unverified local model output. Review every factual claim."}
                     {run.evidence?.status === "matched"
                       ? " Recorded evidence was retrieved; citations still require your review."
                       : " No retrieval was used."}{" "}
@@ -1394,12 +1477,79 @@ function RunDetail({
                   ? `Saved ${dateTime(run.artifact.savedAt)}`
                   : run.mode === "simulation"
                     ? "Deterministic local template · No model call"
-                    : "Local Ollama draft · Awaiting review"}
+                    : humanRevised
+                      ? "Human-revised draft · Awaiting review"
+                      : "Local Ollama draft · Awaiting review"}
                 <span>MARKDOWN</span>
               </div>
             </section>
           ) : (
             <GenerationProgress run={run} />
+          )}
+          {revisions.length > 0 && (
+            <section
+              className="draft-revision-history"
+              aria-labelledby="draft-history-title"
+            >
+              <div className="section-header">
+                <div>
+                  <div className="section-kicker">RETAINED PRIVATE HISTORY</div>
+                  <h2 id="draft-history-title">
+                    Draft revisions{" "}
+                    <span className="inline-count">{revisions.length}</span>
+                  </h2>
+                </div>
+              </div>
+              <p>
+                Prior full documents, correction reasons, and owner attribution
+                remain retained. Human revisions do not represent another model
+                call.
+              </p>
+              {[...revisions].reverse().map((revision) => (
+                <details key={revision.editId}>
+                  <summary>
+                    <span>
+                      Run revision {revision.fromRevision} →{" "}
+                      {revision.toRevision}
+                    </span>
+                    <span>{dateTime(revision.occurredAt)}</span>
+                  </summary>
+                  <dl>
+                    <div>
+                      <dt>Revised by</dt>
+                      <dd>
+                        {revision.actorName ??
+                          (revision.actor === "local-operator"
+                            ? "local operator"
+                            : "workspace owner")}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Reason</dt>
+                      <dd>{revision.reason}</dd>
+                    </div>
+                    <div>
+                      <dt>Ledger event</dt>
+                      <dd>{revision.eventSequence}</dd>
+                    </div>
+                  </dl>
+                  <details className="draft-prior-record">
+                    <summary>Read exact prior full document</summary>
+                    <pre tabIndex={0}>{revision.previousProposal.content}</pre>
+                  </details>
+                  <span className="tiny-label">PRIOR PROPOSAL FINGERPRINT</span>
+                  <code className="fingerprint">
+                    {revision.previousProposal.fingerprint}
+                  </code>
+                  <span className="tiny-label">
+                    REVISED PROPOSAL FINGERPRINT
+                  </span>
+                  <code className="fingerprint">
+                    {revision.nextFingerprint}
+                  </code>
+                </details>
+              ))}
+            </section>
           )}
           <details className="workflow-panel">
             <summary>
@@ -1554,44 +1704,98 @@ function RunDetail({
             )}
             {run.status === "waiting_approval" && proposal && (
               <div className="review-buttons">
-                <button
-                  className="button button-secondary"
-                  onClick={() => {
-                    const preview = document.getElementById("artifact-preview");
-                    preview?.focus({ preventScroll: true });
-                    preview?.scrollIntoView({ block: "start" });
-                  }}
-                >
-                  <Icon name="knowledge" size={17} />
-                  Read exact document
-                </button>
-                <button
-                  className="button button-primary"
-                  disabled={Boolean(deciding) || !connected}
-                  onClick={() => {
-                    void decide("approve");
-                  }}
-                >
-                  <Icon
-                    name={deciding === "approve" ? "refresh" : "check"}
-                    size={17}
-                    className={deciding === "approve" ? "spinning" : ""}
-                  />
-                  {deciding === "approve"
-                    ? "Saving local result…"
-                    : "Approve local result"}
-                </button>
-                <button
-                  className="button button-quiet"
-                  disabled={Boolean(deciding) || !connected}
-                  onClick={() => {
-                    void decide("reject");
-                  }}
-                >
-                  {deciding === "reject"
-                    ? "Recording rejection…"
-                    : "Reject proposal"}
-                </button>
+                {!editing && (
+                  <>
+                    <button
+                      className="button button-secondary"
+                      onClick={() => {
+                        const preview =
+                          document.getElementById("artifact-preview");
+                        preview?.focus({ preventScroll: true });
+                        preview?.scrollIntoView({ block: "start" });
+                      }}
+                    >
+                      <Icon name="knowledge" size={17} />
+                      Read exact document
+                    </button>
+                    <button
+                      className="button button-primary"
+                      disabled={
+                        Boolean(deciding) || !connected || Boolean(editing)
+                      }
+                      onClick={() => {
+                        void decide("approve");
+                      }}
+                    >
+                      <Icon
+                        name={deciding === "approve" ? "refresh" : "check"}
+                        size={17}
+                        className={deciding === "approve" ? "spinning" : ""}
+                      />
+                      {deciding === "approve"
+                        ? "Saving local result…"
+                        : "Approve local result"}
+                    </button>
+                    <button
+                      className="button button-quiet"
+                      disabled={
+                        Boolean(deciding) || !connected || Boolean(editing)
+                      }
+                      onClick={() => {
+                        void decide("reject");
+                      }}
+                    >
+                      {deciding === "reject"
+                        ? "Recording rejection…"
+                        : "Reject proposal"}
+                    </button>
+                    {editableBody !== undefined && !editing && (
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        disabled={Boolean(deciding) || !connected}
+                        onClick={() => {
+                          const next = openDraftSession(
+                            ownerId,
+                            run,
+                            editableBody,
+                          );
+                          if (!next) {
+                            setError(
+                              "Another unsaved correction is held in this tab. Return to that run and save or explicitly discard it before opening another editor.",
+                            );
+                            return;
+                          }
+                          setEditing(next);
+                          setRevisionSaved(null);
+                          setError(null);
+                          window.requestAnimationFrame(() =>
+                            document
+                              .getElementById("draft-editor-title")
+                              ?.scrollIntoView({ block: "start" }),
+                          );
+                        }}
+                      >
+                        Revise draft
+                      </button>
+                    )}
+                  </>
+                )}
+                {editing && (
+                  <p className="draft-review-held" role="status">
+                    Editing session open. Save the revised draft or explicitly
+                    discard this session before approving or rejecting.
+                  </p>
+                )}
+                {!editing &&
+                  run.mode === "ollama" &&
+                  editableBody === undefined && (
+                    <p className="decision-offline">
+                      {revisions.length >= 10
+                        ? "This run has reached its ten-revision limit. Create another mission to continue drafting."
+                        : "This saved document format cannot be safely edited. It remains available for exact review."}
+                    </p>
+                  )}
                 {!connected && (
                   <p className="decision-offline">
                     Reconnect to record a decision.
@@ -1715,6 +1919,12 @@ function RunDetail({
                 </>
               )}
             </dl>
+            {humanRevised && (
+              <p className="draft-usage-note">
+                Recorded token usage and provider duration describe the original
+                model call. Human edits made no new provider request.
+              </p>
+            )}
             <details className="route-details">
               <summary>
                 Routing & approval record
