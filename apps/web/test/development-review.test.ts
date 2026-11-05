@@ -6,6 +6,7 @@ import {
   DEVELOPMENT_CHECK_NAMES,
   DEVELOPMENT_COMMAND,
   DEVELOPMENT_PATH,
+  developmentProfileFingerprintInput,
   validateDevelopmentCandidate,
   type DevelopmentCheck,
   type DevelopmentProfile,
@@ -45,6 +46,7 @@ const profile: DevelopmentProfile = {
   policyId: "owned-repository-offline-v1",
   profileHash: "e".repeat(64),
 };
+profile.profileHash = hash(developmentProfileFingerprintInput(profile));
 function receipt(phase: "baseline" | "candidate"): DevelopmentCheck {
   return {
     executionId: `vuzmi-dev-fixture-${phase}`,

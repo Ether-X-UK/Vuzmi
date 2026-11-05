@@ -35,6 +35,12 @@ import {
   developmentMigration,
 } from "./development.js";
 
+import {
+  DevelopmentApplicationRepository,
+  DEVELOPMENT_APPLICATION_QUEUE,
+  developmentApplicationMigration,
+} from "./development-application.js";
+
 export const GENERATION_QUEUE = "vuzmi-generate-release";
 export const GENERATION_RETRY_LIMIT = 2;
 export const sha256 = (value: string): string =>
@@ -168,6 +174,7 @@ async function migrate(pool: Pool, schemaName: string): Promise<void> {
       { version: 2, sql: knowledgeMigration(schema) },
       { version: 3, sql: githubKnowledgeMigration(schema) },
       { version: 4, sql: developmentMigration(schema) },
+      { version: 5, sql: developmentApplicationMigration(schema) },
     ]) {
       const existing = await client.query<{ checksum: string }>(
         `SELECT checksum FROM ${schema}.schema_migrations WHERE version=$1`,
@@ -196,6 +203,7 @@ export class PostgresRunRepository {
   readonly queueSchema: string;
   readonly knowledge: KnowledgeRepository;
   readonly development: DevelopmentRepository;
+  readonly applications: DevelopmentApplicationRepository;
   private closed = false;
 
   private constructor(
@@ -222,6 +230,15 @@ export class PostgresRunRepository {
       queueSchema: this.queueSchema,
       transaction: (operation, signal) => transaction(pool, operation, signal),
       now,
+    });
+    this.applications = new DevelopmentApplicationRepository({
+      pool,
+      boss,
+      schema: this.schema,
+      queueSchema: this.queueSchema,
+      transaction: (operation, signal) => transaction(pool, operation, signal),
+      now,
+      getRun: (workspaceId, id) => this.development.get(workspaceId, id),
     });
   }
 
@@ -273,6 +290,12 @@ export class PostgresRunRepository {
         policy: "singleton",
         retryLimit: 0,
         expireInSeconds: 600,
+        heartbeatSeconds: 10,
+      });
+      await boss.createQueue(DEVELOPMENT_APPLICATION_QUEUE, {
+        policy: "singleton",
+        retryLimit: 0,
+        expireInSeconds: 120,
         heartbeatSeconds: 10,
       });
       return new PostgresRunRepository(

@@ -5,6 +5,37 @@ const hashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const imageSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const date = z.string().datetime();
 export const DEVELOPMENT_PATH = "apps/web/src/api.ts" as const;
+export const DEVELOPMENT_REGRESSION_PATHS = [
+  DEVELOPMENT_PATH,
+  "apps/web/src/draftSession.ts",
+  "apps/web/src/proposalReview.ts",
+] as const;
+export const DEVELOPMENT_REGRESSION_CHECK_FILES = [
+  "apps/web/test/api-session-expiry.test.ts",
+  "apps/web/test/draft-session.test.ts",
+  "apps/web/test/proposal-review.test.ts",
+] as const;
+export const DEVELOPMENT_REGRESSION_CHECK_NAMES = [
+  "an unreadable 401 invalidates the session before body decoding",
+  "a malformed 401 invalidates the session exactly once",
+  "a stalled 401 body cannot postpone session invalidation",
+  "a readable 401 preserves its structured error and expires once",
+  "unreadable non-401 failures do not invalidate the session",
+  "successful JSON is preserved without invalidating the session",
+  "connection failure remains distinct from session expiry",
+  "transient draft recovery preserves exact input and fences owner, origin, and run",
+  "late save settlement cannot clear changed input or a replacement session",
+  "sign-out awaits the active discard guard and cannot silently drop an inactive correction",
+  "unchanged initial proposals retain normal exact-version decision behavior",
+  "poll replacement preserves A and blocks both decisions until B is opened and acknowledged",
+  "C arriving during B acknowledgment invalidates B without replacing its displayed text",
+  "an acknowledged B is invalidated by either revision or fingerprint changes",
+  "409 recovery stays blocked even if refresh fails or returns the same proposal",
+  "captured requests remain bound to A while later observations require new review",
+  "run switches reject old click/ack arguments and late older responses cannot reopen terminal review",
+  "initial queued generation adopts its first proposal without treating it as a replacement",
+  "a terminal rejection replaces the pinned document and cannot be acknowledged into another decision",
+] as const;
 export const DEVELOPMENT_CHECK_NAMES = [
   "unreadable 401 expires the session before body parsing",
   "malformed 401 expires the session before body parsing",
@@ -20,12 +51,29 @@ export const DEVELOPMENT_COMMAND = [
   "--test",
   "/opt/vuzmi/checks/web-api-status-authority.test.ts",
 ] as const;
-const commandSchema = z.tuple([
+const legacyCommandSchema = z.tuple([
   z.literal("/usr/local/bin/node"),
   z.literal("--import"),
   z.literal("tsx"),
   z.literal("--test"),
   z.literal("/opt/vuzmi/checks/web-api-status-authority.test.ts"),
+]);
+export const DEVELOPMENT_REGRESSION_COMMAND = [
+  "/usr/local/bin/node",
+  "--import",
+  "tsx",
+  "--test",
+  "/opt/vuzmi/checks/web-client-regressions.test.ts",
+] as const;
+const commandSchema = z.union([
+  legacyCommandSchema,
+  z.tuple([
+    z.literal(DEVELOPMENT_REGRESSION_COMMAND[0]),
+    z.literal(DEVELOPMENT_REGRESSION_COMMAND[1]),
+    z.literal(DEVELOPMENT_REGRESSION_COMMAND[2]),
+    z.literal(DEVELOPMENT_REGRESSION_COMMAND[3]),
+    z.literal(DEVELOPMENT_REGRESSION_COMMAND[4]),
+  ]),
 ]);
 function validText(text: string): boolean {
   return (
@@ -48,23 +96,24 @@ export const developmentInputSchema = z
     brief: z.string().trim().min(10).max(3000),
     model: z.string().trim().min(1).max(200),
     issueNumber: z.number().int().positive().max(10_000_000).optional(),
+    profileHash: hashSchema.optional(),
   })
   .strict();
 export type DevelopmentInput = z.infer<typeof developmentInputSchema>;
 export const developmentFileSchema = z
   .object({
-    path: z.literal(DEVELOPMENT_PATH),
+    path: z.enum(DEVELOPMENT_REGRESSION_PATHS),
     sha256: hashSchema,
     text: codeText,
   })
   .strict();
-export const developmentProfileSchema = z
+const profileShape = z
   .object({
-    id: z.literal("web-api-status-authority"),
+    id: z.enum(["web-api-status-authority", "web-client-regressions"]),
     version: z.literal(1),
     repository: z.literal("Ether-X-UK/Vuzmi"),
     baseCommit: z.string().regex(/^[a-f0-9]{40}$/),
-    files: z.tuple([developmentFileSchema]),
+    files: z.array(developmentFileSchema).min(1).max(3),
     command: commandSchema,
     acceptanceHash: hashSchema,
     lockfileHash: hashSchema,
@@ -72,17 +121,113 @@ export const developmentProfileSchema = z
     platform: z.enum(["linux/arm64", "linux/amd64"]),
     policyId: z.literal("owned-repository-offline-v1"),
     profileHash: hashSchema,
+    sourceTree: z
+      .string()
+      .regex(/^[a-f0-9]{40}$/)
+      .optional(),
+    sourceArchiveSha256: hashSchema.optional(),
+    checkFiles: z
+      .array(
+        z
+          .object({
+            path: z.enum(DEVELOPMENT_REGRESSION_CHECK_FILES),
+            sha256: hashSchema,
+          })
+          .strict(),
+      )
+      .length(3)
+      .optional(),
+    checkNames: z.array(z.string().min(1).max(200)).length(19).optional(),
+    baselineExpectation: z.literal("green").optional(),
+    checkHarnessSha256: hashSchema.optional(),
   })
   .strict();
+export const developmentProfileSchema = profileShape.superRefine(
+  (profile, ctx) => {
+    const legacy = profile.id === "web-api-status-authority";
+    const expectedCommand = legacy
+      ? DEVELOPMENT_COMMAND
+      : DEVELOPMENT_REGRESSION_COMMAND;
+    const paths = legacy ? [DEVELOPMENT_PATH] : DEVELOPMENT_REGRESSION_PATHS;
+    if (
+      JSON.stringify(profile.command) !== JSON.stringify(expectedCommand) ||
+      JSON.stringify(profile.files.map((f) => f.path)) !== JSON.stringify(paths)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "The registered profile must retain its exact permitted paths and command.",
+      });
+    if (legacy) {
+      if (
+        [
+          profile.sourceTree,
+          profile.sourceArchiveSha256,
+          profile.checkFiles,
+          profile.checkNames,
+          profile.baselineExpectation,
+          profile.checkHarnessSha256,
+        ].some((value) => value !== undefined)
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: "Legacy profile semantics cannot be changed.",
+        });
+    } else if (
+      !profile.sourceTree ||
+      !profile.sourceArchiveSha256 ||
+      profile.baselineExpectation !== "green" ||
+      !profile.checkHarnessSha256 ||
+      JSON.stringify(profile.checkFiles?.map((f) => f.path)) !==
+        JSON.stringify(DEVELOPMENT_REGRESSION_CHECK_FILES) ||
+      JSON.stringify(profile.checkNames) !==
+        JSON.stringify(DEVELOPMENT_REGRESSION_CHECK_NAMES)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "Reusable profiles require the complete immutable source and regression manifest.",
+      });
+    if (
+      profile.files.reduce(
+        (bytes, f) => bytes + new TextEncoder().encode(f.text).length,
+        0,
+      ) > 24_576
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "The complete source context exceeds the profile byte budget.",
+      });
+  },
+);
 export type DevelopmentProfile = z.infer<typeof developmentProfileSchema>;
 export function developmentProfileFingerprintInput(
   value: Omit<DevelopmentProfile, "profileHash"> | DevelopmentProfile,
 ): string {
   const { profileHash: _hash, ...unsigned } = value as DevelopmentProfile;
-  const parsed = developmentProfileSchema
-    .omit({ profileHash: true })
-    .parse(unsigned);
+  const parsed = profileShape.omit({ profileHash: true }).parse(unsigned);
   return JSON.stringify(parsed);
+}
+export function developmentCheckNames(
+  profile: DevelopmentProfile,
+): readonly string[] {
+  return profile.id === "web-api-status-authority"
+    ? DEVELOPMENT_CHECK_NAMES
+    : DEVELOPMENT_REGRESSION_CHECK_NAMES;
+}
+export function developmentAcceptanceFingerprintInput(
+  profile: Pick<
+    DevelopmentProfile,
+    "checkFiles" | "checkNames" | "command" | "checkHarnessSha256"
+  >,
+): string {
+  return JSON.stringify({
+    version: 1,
+    files: profile.checkFiles,
+    names: profile.checkNames,
+    command: profile.command,
+    harnessSha256: profile.checkHarnessSha256,
+  });
 }
 export const developmentIssueSchema = z
   .object({
@@ -101,32 +246,38 @@ export type DevelopmentIssue = z.infer<typeof developmentIssueSchema>;
 export const developmentPatchInputSchema = z
   .object({
     summary: z.string().trim().min(10).max(1200),
-    files: z.tuple([
-      z
-        .object({
-          path: z.literal(DEVELOPMENT_PATH),
-          beforeSha256: hashSchema,
-          content: codeText,
-        })
-        .strict(),
-    ]),
+    files: z
+      .array(
+        z
+          .object({
+            path: z.enum(DEVELOPMENT_REGRESSION_PATHS),
+            beforeSha256: hashSchema,
+            content: codeText,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(3),
   })
   .strict();
 export type DevelopmentPatchInput = z.infer<typeof developmentPatchInputSchema>;
 export const developmentCandidateSchema = z
   .object({
     summary: z.string().min(10).max(1200),
-    files: z.tuple([
-      z
-        .object({
-          path: z.literal(DEVELOPMENT_PATH),
-          beforeSha256: hashSchema,
-          afterSha256: hashSchema,
-          content: codeText,
-        })
-        .strict(),
-    ]),
-    diff: z.string().min(1).max(40_000),
+    files: z
+      .array(
+        z
+          .object({
+            path: z.enum(DEVELOPMENT_REGRESSION_PATHS),
+            beforeSha256: hashSchema,
+            afterSha256: hashSchema,
+            content: codeText,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(3),
+    diff: z.string().min(1).max(120_000),
     fingerprint: hashSchema,
   })
   .strict();
@@ -174,6 +325,7 @@ export const developmentRuntimeSchema = z
     reason: z.string().nullable(),
     profile: developmentProfileSchema.nullable(),
     defaultModel: z.string(),
+    profiles: z.array(developmentProfileSchema).max(16).optional(),
   })
   .strict();
 export type DevelopmentRuntime = z.infer<typeof developmentRuntimeSchema>;
@@ -321,23 +473,54 @@ export function validateDevelopmentCandidate(
       "The model did not return a bounded replacement for the permitted file.",
       422,
     );
-  const file = result.data.files[0],
-    base = profile.files[0];
+  profile = developmentProfileSchema.parse(profile);
   if (
-    file.path !== base.path ||
-    file.beforeSha256 !== base.sha256 ||
-    hash(base.text) !== base.sha256 ||
-    file.content === base.text
+    hash(developmentProfileFingerprintInput(profile)) !== profile.profileHash ||
+    profile.files.some((file) => hash(file.text) !== file.sha256) ||
+    (profile.id === "web-client-regressions" &&
+      hash(developmentAcceptanceFingerprintInput(profile)) !==
+        profile.acceptanceHash)
+  )
+    throw new DevelopmentError(
+      "DEVELOPMENT_INTEGRITY",
+      "The exact source profile or its trusted regression manifest could not be verified.",
+    );
+  const byPath = new Map(profile.files.map((file) => [file.path, file]));
+  const paths = new Set<string>();
+  if (
+    result.data.files.some((file) => {
+      const base = byPath.get(file.path);
+      const invalid =
+        !base ||
+        paths.has(file.path) ||
+        file.beforeSha256 !== base.sha256 ||
+        hash(base.text) !== base.sha256 ||
+        file.content === base.text;
+      paths.add(file.path);
+      return invalid;
+    }) ||
+    result.data.files.reduce(
+      (bytes, f) => bytes + new TextEncoder().encode(f.content).length,
+      0,
+    ) > 24_576
   )
     throw new DevelopmentError(
       "INVALID_PATCH",
-      "The proposed change is empty or does not match the pinned permitted file.",
+      "The proposed changes are empty, duplicated, oversized or do not match the pinned permitted files.",
       422,
     );
+  const files = profile.files.flatMap((base) => {
+    const file = result.data.files.find((file) => file.path === base.path);
+    return file ? [{ ...file, afterSha256: hash(file.content) }] : [];
+  });
   const unsigned = {
     summary: result.data.summary,
-    files: [{ ...file, afterSha256: hash(file.content) }] as const,
-    diff: unifiedFile(file.path, base.text, file.content),
+    files,
+    diff: files
+      .map((file) =>
+        unifiedFile(file.path, byPath.get(file.path)!.text, file.content),
+      )
+      .join(""),
   };
   return developmentCandidateSchema.parse({
     ...unsigned,
@@ -356,6 +539,12 @@ export function createDevelopmentRun(
   },
 ): DevelopmentRun {
   const value = developmentInputSchema.parse(input);
+  if (value.profileHash && value.profileHash !== profile.profileHash)
+    throw new DevelopmentError(
+      "DEVELOPMENT_PROFILE_CHANGED",
+      "The displayed source profile does not match the pinned task. Review the exact context before starting.",
+      409,
+    );
   return developmentRunSchema.parse({
     id: context.id,
     workspaceId: "local-workspace",
@@ -432,8 +621,8 @@ export function developmentReview(run: DevelopmentRun): DevelopmentReview {
     !run.candidate ||
     !run.baseline ||
     !run.checks ||
-    !developmentCandidatePassed(run.checks) ||
-    !developmentBaselineReproduced(run.baseline) ||
+    !developmentCandidatePassed(run.checks, run.profile) ||
+    !developmentBaselineAccepted(run.baseline, run.profile) ||
     !run.routeExecuted ||
     !run.modelDigest ||
     !run.usage ||
@@ -441,7 +630,7 @@ export function developmentReview(run: DevelopmentRun): DevelopmentReview {
   )
     throw new DevelopmentError(
       "DEVELOPMENT_NOT_REVIEWABLE",
-      "A validated patch, reproduced baseline failure and passing isolated candidate checks are required.",
+      "A validated patch, the registered baseline result and passing isolated candidate checks are required.",
     );
   return developmentReviewSchema.parse({
     kind: "save_local_development_package",
@@ -481,18 +670,41 @@ export function developmentBaselineReproduced(
     )
   );
 }
-export function developmentCandidatePassed(check: DevelopmentCheck): boolean {
+function passingDevelopmentCheck(
+  check: DevelopmentCheck,
+  names: readonly string[],
+): boolean {
   return (
-    check.phase === "candidate" &&
     check.status === "passed" &&
     check.started &&
     check.policyVerified &&
     !check.truncated &&
     check.exitCode === 0 &&
-    check.tests.length === DEVELOPMENT_CHECK_NAMES.length &&
-    DEVELOPMENT_CHECK_NAMES.every(
+    check.tests.length === names.length &&
+    names.every(
       (name) =>
         check.tests.filter((t) => t.name === name && t.passed).length === 1,
+    )
+  );
+}
+export function developmentBaselineAccepted(
+  check: DevelopmentCheck,
+  profile: DevelopmentProfile,
+): boolean {
+  return profile.id === "web-api-status-authority"
+    ? developmentBaselineReproduced(check)
+    : check.phase === "baseline" &&
+        passingDevelopmentCheck(check, developmentCheckNames(profile));
+}
+export function developmentCandidatePassed(
+  check: DevelopmentCheck,
+  profile?: DevelopmentProfile,
+): boolean {
+  return (
+    check.phase === "candidate" &&
+    passingDevelopmentCheck(
+      check,
+      profile ? developmentCheckNames(profile) : DEVELOPMENT_CHECK_NAMES,
     )
   );
 }
@@ -603,7 +815,10 @@ export function parseDevelopmentIntegrity(
   if (
     hash(developmentProfileFingerprintInput(run.profile)) !==
       run.profile.profileHash ||
-    hash(run.profile.files[0].text) !== run.profile.files[0].sha256 ||
+    run.profile.files.some((file) => hash(file.text) !== file.sha256) ||
+    (run.profile.id === "web-client-regressions" &&
+      hash(developmentAcceptanceFingerprintInput(run.profile)) !==
+        run.profile.acceptanceHash) ||
     run.events.some((e, i) => e.sequence !== i + 1)
   )
     invalid();
@@ -645,8 +860,8 @@ export function parseDevelopmentIntegrity(
         !receipt.policyVerified ||
         receipt.exitCode !== 0 ||
         receipt.truncated ||
-        receipt.tests.length !== DEVELOPMENT_CHECK_NAMES.length ||
-        DEVELOPMENT_CHECK_NAMES.some(
+        receipt.tests.length !== developmentCheckNames(run.profile).length ||
+        developmentCheckNames(run.profile).some(
           (name) =>
             receipt.tests.filter((t) => t.name === name && t.passed).length !==
             1,

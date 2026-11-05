@@ -17,6 +17,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   DEVELOPMENT_COMMAND,
   DEVELOPMENT_PATH,
+  DEVELOPMENT_REGRESSION_PATHS,
+  DEVELOPMENT_REGRESSION_COMMAND,
+  DEVELOPMENT_REGRESSION_CHECK_FILES,
+  DEVELOPMENT_REGRESSION_CHECK_NAMES,
+  developmentAcceptanceFingerprintInput,
+  developmentBaselineAccepted,
   developmentProfileFingerprintInput,
   developmentProfileSchema,
 } from "../packages/core/src/development.ts";
@@ -24,6 +30,9 @@ import {
   DEVELOPMENT_BASE_COMMIT,
   DEVELOPMENT_POLICY,
   executeDockerCommand,
+  developmentBuildContext,
+  createDevelopmentRunner,
+  loadDevelopmentRunnerConfig,
 } from "../packages/runtime/src/development-runner.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -43,28 +52,148 @@ function privateDirectory(path) {
   )
     throw genericFailure();
 }
-function git(args) {
-  return execFileSync(
-    "git",
-    ["-c", "core.fsmonitor=false", "-C", repositoryRoot, ...args],
-    {
-      env: {
-        PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
-        GIT_CONFIG_NOSYSTEM: "1",
-        GIT_CONFIG_GLOBAL: "/dev/null",
+function git(args, repository = repositoryRoot, missingOkay = false) {
+  try {
+    return execFileSync(
+      "git",
+      [
+        "--no-replace-objects",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "protocol.allow=never",
+        "-C",
+        repository,
+        ...args,
+      ],
+      {
+        env: {
+          PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_NO_LAZY_FETCH: "1",
+          GIT_ALLOW_PROTOCOL: "",
+          GIT_PROTOCOL_FROM_USER: "0",
+          GIT_TERMINAL_PROMPT: "0",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+        maxBuffer: 32 * 1024 * 1024,
       },
-      stdio: ["ignore", "pipe", "pipe"],
-      maxBuffer: 32 * 1024 * 1024,
-    },
-  );
+    );
+  } catch (error) {
+    if (missingOkay && error?.status === 1) return Buffer.alloc(0);
+    throw genericFailure();
+  }
 }
+/** Export exact regular Git blobs/modes; archive attributes and worktree filters never run. */
+export function exportDevelopmentSnapshot({
+  repository = repositoryRoot,
+  commit,
+  requireClean = false,
+}) {
+  if (
+    git(
+      [
+        "config",
+        "--name-only",
+        "--get-regexp",
+        "^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$",
+      ],
+      repository,
+      true,
+    ).length
+  )
+    throw new Error(
+      "Development snapshots require complete local Git objects; partial/promisor repositories are not supported.",
+    );
+  if (
+    !/^[a-f0-9]{40}$/.test(commit ?? "") ||
+    git(["rev-parse", "--verify", `${commit}^{commit}`], repository)
+      .toString("utf8")
+      .trim() !== commit
+  )
+    throw genericFailure();
+  if (
+    requireClean &&
+    (git(["rev-parse", "HEAD"], repository).toString("utf8").trim() !==
+      commit ||
+      git(
+        [
+          "status",
+          "--porcelain=v1",
+          "-z",
+          "--untracked-files=all",
+          "--ignore-submodules=none",
+        ],
+        repository,
+      ).length)
+  )
+    throw new Error(
+      "Reusable profiles require the explicitly selected full commit to equal a clean HEAD, including nonignored untracked files.",
+    );
+  const sourceTree = git(["rev-parse", `${commit}^{tree}`], repository)
+    .toString("utf8")
+    .trim();
+  if (!/^[a-f0-9]{40}$/.test(sourceTree)) throw genericFailure();
+  const entries = git(
+    ["ls-tree", "-r", "-z", "--full-tree", commit],
+    repository,
+  )
+    .toString("utf8")
+    .split("\0")
+    .filter(Boolean);
+  if (!entries.length || entries.length > 2000) throw genericFailure();
+  const files = new Map();
+  let total = 0;
+  const records = entries.map((entry) => {
+    const match = /^(100644|100755) blob ([a-f0-9]{40})\t(.+)$/.exec(entry);
+    if (!match) throw genericFailure();
+    const path = match[3];
+    if (
+      path.startsWith("/") ||
+      path
+        .split("/")
+        .some(
+          (part) =>
+            part === ".." ||
+            [".git", ".data", "node_modules", ".ssh", ".aws"].includes(part) ||
+            ((part === ".env" || part.startsWith(".env.")) &&
+              part !== ".env.example"),
+        )
+    )
+      throw genericFailure();
+    const content = git(["cat-file", "blob", match[2]], repository);
+    total += content.length;
+    if (total > 32 * 1024 * 1024) throw genericFailure();
+    files.set(path, content);
+    return { path, content, mode: match[1] === "100755" ? 0o755 : 0o644 };
+  });
+  return { sourceTree, archive: developmentBuildContext(records), files };
+}
+const text = (value) =>
+  new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(value);
 /** Provision reviewed Git objects only. Never starts/installs a VM or reads the operator's environment files. */
 export async function setupDevelopment({
   dockerHost,
   dockerBinary,
   platform,
+  profileId = "web-api-status-authority",
+  commit,
+  repository = repositoryRoot,
+  stateRoot,
 } = {}) {
-  const privateRoot = join(repositoryRoot, ".data/dev");
+  if (
+    !["web-api-status-authority", "web-client-regressions"].includes(
+      profileId,
+    ) ||
+    (profileId === "web-api-status-authority" && commit !== undefined)
+  )
+    throw genericFailure();
+  const reusable = profileId === "web-client-regressions";
+  const baseCommit = reusable ? commit : DEVELOPMENT_BASE_COMMIT;
+  const privateRoot = stateRoot ?? join(repositoryRoot, ".data/dev");
   privateDirectory(privateRoot);
   const dockerConfig = join(privateRoot, "development-docker-cli");
   privateDirectory(dockerConfig);
@@ -140,63 +269,76 @@ export async function setupDevelopment({
     await docker(["version", "--format", "{{.Server.Os}}/{{.Server.Arch}}"])
   ).trim();
   if (server !== selectedPlatform) throw genericFailure();
-  const source = git([
-    "show",
-    `${DEVELOPMENT_BASE_COMMIT}:${DEVELOPMENT_PATH}`,
-  ]).toString("utf8");
-  const lockfile = git([
-    "show",
-    `${DEVELOPMENT_BASE_COMMIT}:package-lock.json`,
-  ]);
+  const snapshot = exportDevelopmentSnapshot({
+    repository,
+    commit: baseCommit,
+    requireClean: reusable,
+  });
+  const paths = reusable ? DEVELOPMENT_REGRESSION_PATHS : [DEVELOPMENT_PATH];
+  const sources = paths.map((path) => {
+    const bytes = snapshot.files.get(path);
+    if (!bytes) throw genericFailure();
+    return { path, text: text(bytes), sha256: sha256(bytes) };
+  });
+  const lockfile = snapshot.files.get("package-lock.json");
+  if (!lockfile) throw genericFailure();
+  const lockfileHash = sha256(lockfile);
+  const harnessName = reusable
+    ? "web-client-regressions.test.ts"
+    : "web-api-status-authority.test.ts";
   const harness = readFileSync(
-    join(repositoryRoot, "scripts/checks/web-api-status-authority.test.ts"),
+    join(repositoryRoot, "scripts/checks", harnessName),
   );
-  const acceptanceHash = sha256(harness),
-    lockfileHash = sha256(lockfile);
-  const tree = git(["ls-tree", "-r", "--name-only", DEVELOPMENT_BASE_COMMIT])
-    .toString("utf8")
-    .trim()
-    .split("\n");
-  if (
-    tree.some(
-      (path) =>
-        path.startsWith("/") ||
-        path.split("/").includes("..") ||
-        path
-          .split("/")
-          .some(
-            (part) =>
-              [".git", ".data", "node_modules", ".ssh", ".aws"].includes(
-                part,
-              ) ||
-              ((part === ".env" || part.startsWith(".env.")) &&
-                part !== ".env.example"),
-          ),
-    )
-  )
-    throw genericFailure();
-  if (
-    git(["ls-tree", "-r", DEVELOPMENT_BASE_COMMIT])
-      .toString("utf8")
-      .split("\n")
-      .some((line) => /^(?:120000|160000) /.test(line))
-  )
-    throw genericFailure();
+  const command = [
+    ...(reusable ? DEVELOPMENT_REGRESSION_COMMAND : DEVELOPMENT_COMMAND),
+  ];
+  const checkFiles = reusable
+    ? DEVELOPMENT_REGRESSION_CHECK_FILES.map((path) => {
+        const bytes = snapshot.files.get(path);
+        if (!bytes) throw genericFailure();
+        return { path, sha256: sha256(bytes) };
+      })
+    : undefined;
+  const extensions = reusable
+    ? {
+        sourceTree: snapshot.sourceTree,
+        sourceArchiveSha256: sha256(snapshot.archive),
+        checkFiles,
+        checkNames: [...DEVELOPMENT_REGRESSION_CHECK_NAMES],
+        baselineExpectation: "green",
+        checkHarnessSha256: sha256(harness),
+      }
+    : {};
+  const acceptanceHash = reusable
+    ? sha256(developmentAcceptanceFingerprintInput({ ...extensions, command }))
+    : sha256(harness);
   const context = mkdtempSync(join(privateRoot, "development-provision-"));
   chmodSync(context, 0o700);
   try {
-    const archive = git(["archive", "--format=tar", DEVELOPMENT_BASE_COMMIT]);
-    execFileSync("tar", ["-xf", "-", "-C", context], {
+    const archive = snapshot.archive;
+    const sourceContext = join(context, "source");
+    mkdirSync(sourceContext, { mode: 0o700 });
+    execFileSync("tar", ["-xf", "-", "-C", sourceContext], {
       input: archive,
       stdio: ["pipe", "ignore", "pipe"],
       maxBuffer: 1024 * 1024,
     });
     if (
-      sha256(readFileSync(join(context, DEVELOPMENT_PATH))) !==
-        sha256(source) ||
-      sha256(readFileSync(join(context, "package-lock.json"))) !== lockfileHash
+      sources.some(
+        (source) =>
+          sha256(readFileSync(join(sourceContext, source.path))) !==
+          source.sha256,
+      ) ||
+      sha256(readFileSync(join(sourceContext, "package-lock.json"))) !==
+        lockfileHash
     )
       throw genericFailure();
+    if (reusable)
+      writeFileSync(
+        join(context, "vuzmi-regressions-manifest.json"),
+        JSON.stringify({ names: DEVELOPMENT_REGRESSION_CHECK_NAMES }),
+        { mode: 0o644 },
+      );
     writeFileSync(join(context, "vuzmi-check-harness.ts"), harness, {
       mode: 0o600,
     });
@@ -237,17 +379,27 @@ export async function setupDevelopment({
     const dockerfile = [
       `FROM ${upstreamDigest}`,
       "WORKDIR /opt/vuzmi/repository",
-      "COPY . /opt/vuzmi/repository",
+      "COPY source/ /opt/vuzmi/repository/",
       "RUN npm ci --ignore-scripts --no-audit --no-fund --workspace @vuzmi/core --include-workspace-root",
-      "COPY vuzmi-check-harness.ts /opt/vuzmi/checks/web-api-status-authority.test.ts",
-      `LABEL io.vuzmi.development.acceptance=\"${acceptanceHash}\" io.vuzmi.development.lockfile=\"${lockfileHash}\" io.vuzmi.development.base=\"${DEVELOPMENT_BASE_COMMIT}\" io.vuzmi.development.policy=\"${DEVELOPMENT_POLICY}\"`,
+      `COPY vuzmi-check-harness.ts /opt/vuzmi/checks/${harnessName}`,
+      ...(reusable
+        ? [
+            "COPY vuzmi-regressions-manifest.json /opt/vuzmi/checks/regressions-manifest.json",
+          ]
+        : []),
+      `LABEL io.vuzmi.development.acceptance=\"${acceptanceHash}\" io.vuzmi.development.lockfile=\"${lockfileHash}\" io.vuzmi.development.base=\"${baseCommit}\" io.vuzmi.development.policy=\"${DEVELOPMENT_POLICY}\"`,
+      ...(reusable
+        ? [
+            `LABEL io.vuzmi.development.tree="${snapshot.sourceTree}" io.vuzmi.development.archive="${sha256(snapshot.archive)}"`,
+          ]
+        : []),
       "USER 1000:1000",
       "",
     ].join("\n");
     writeFileSync(join(context, "VuzmiChecks.Dockerfile"), dockerfile, {
       mode: 0o600,
     });
-    const tag = `vuzmi-development-checks:${acceptanceHash.slice(0, 16)}-${selectedPlatform.split("/")[1]}`;
+    const tag = `vuzmi-development-checks:${profileId}-${baseCommit.slice(0, 12)}-${acceptanceHash.slice(0, 12)}-${selectedPlatform.split("/")[1]}`;
     console.log(
       "Installing pinned reviewed dependencies with lifecycle scripts disabled; candidate execution remains offline.",
     );
@@ -272,17 +424,18 @@ export async function setupDevelopment({
     )
       throw genericFailure();
     const unsigned = {
-      id: "web-api-status-authority",
+      id: profileId,
       version: 1,
       repository: "Ether-X-UK/Vuzmi",
-      baseCommit: DEVELOPMENT_BASE_COMMIT,
-      files: [{ path: DEVELOPMENT_PATH, sha256: sha256(source), text: source }],
-      command: [...DEVELOPMENT_COMMAND],
+      baseCommit,
+      files: sources,
+      command,
       acceptanceHash,
       lockfileHash,
       baseImage: image.Id,
       platform: selectedPlatform,
       policyId: DEVELOPMENT_POLICY,
+      ...extensions,
     };
     const profile = developmentProfileSchema.parse({
       ...unsigned,
@@ -292,12 +445,91 @@ export async function setupDevelopment({
       temporary = `${destination}.${randomUUID()}.tmp`;
     if (existsSync(destination) && lstatSync(destination).isSymbolicLink())
       throw genericFailure();
-    writeFileSync(
-      temporary,
-      JSON.stringify({ version: 1, ...connection, profile }, null, 2) + "\n",
-      { mode: 0o600, flag: "wx" },
+    const previous = existsSync(destination)
+      ? loadDevelopmentRunnerConfig(destination)
+      : undefined;
+    const profiles = [
+      ...(previous?.profiles ?? (previous ? [previous.profile] : [])),
+    ];
+    const same = profiles.find(
+      (value) => value.profileHash === profile.profileHash,
     );
-    renameSync(temporary, destination);
+    if (same && JSON.stringify(same) !== JSON.stringify(profile))
+      throw genericFailure();
+    if (!same) profiles.push(profile);
+    if (profiles.length > 8)
+      throw new Error(
+        "The retained profile catalog is full. Review retention explicitly; provisioning never removes profiles or images automatically.",
+      );
+    const configuration = { version: 1, ...connection, profile, profiles };
+    const serialized = JSON.stringify(configuration, null, 2) + "\n";
+    if (Buffer.byteLength(serialized) > 256 * 1024)
+      throw new Error(
+        "The retained profile catalog exceeds its private configuration byte bound. Review retention explicitly.",
+      );
+    writeFileSync(temporary, serialized, { mode: 0o600, flag: "wx" });
+    try {
+      let baseline;
+      if (reusable) {
+        console.log(
+          "Verifying all nineteen immutable regressions in a fresh offline baseline before activation.",
+        );
+        const runId = randomUUID(),
+          attemptId = randomUUID();
+        baseline = await createDevelopmentRunner({ configPath: temporary }).run(
+          {
+            runId,
+            attemptId,
+            executionId: `vuzmi-dev-${runId}-${attemptId}-baseline`,
+            phase: "baseline",
+            profile,
+          },
+        );
+        if (!developmentBaselineAccepted(baseline, profile))
+          throw new Error(
+            "The reusable profile baseline did not produce all nineteen required passing results. The prior active configuration remains unchanged.",
+          );
+      }
+      const registry = join(privateRoot, "development-profiles");
+      privateDirectory(registry);
+      const immutableFile = (path, content) => {
+        if (existsSync(path)) {
+          const info = lstatSync(path);
+          if (
+            info.isSymbolicLink() ||
+            !info.isFile() ||
+            info.uid !== process.getuid?.() ||
+            info.mode & 0o077 ||
+            !readFileSync(path).equals(Buffer.from(content))
+          )
+            throw genericFailure();
+        } else writeFileSync(path, content, { mode: 0o600, flag: "wx" });
+      };
+      for (const retained of profiles) {
+        const directory = join(registry, retained.profileHash);
+        privateDirectory(directory);
+        immutableFile(
+          join(directory, "profile.json"),
+          JSON.stringify(retained, null, 2) + "\n",
+        );
+      }
+      const retained = join(registry, profile.profileHash);
+      immutableFile(join(retained, "source.tar"), snapshot.archive);
+      if (baseline)
+        immutableFile(
+          join(retained, `baseline-${baseline.executionId}.json`),
+          JSON.stringify(baseline, null, 2) + "\n",
+        );
+      await docker([
+        "image",
+        "tag",
+        profile.baseImage,
+        `vuzmi-development-profile:${profile.profileHash}`,
+      ]);
+      renameSync(temporary, destination);
+    } finally {
+      rmSync(temporary, { force: true });
+    }
     console.log(
       `Development profile provisioned for ${selectedPlatform}; private configuration saved. Isolated baseline/candidate verification is a separate gate.`,
     );
@@ -311,17 +543,33 @@ if (
   process.argv[1] &&
   pathToFileURL(resolve(process.argv[1])).href === import.meta.url
 ) {
-  if (process.argv.length !== 2) {
+  try {
+    const args = process.argv.slice(2),
+      options = {};
+    if (args.length) {
+      if (
+        args.length !== 4 ||
+        args[0] !== "--profile" ||
+        args[1] !== "web-client-regressions" ||
+        args[2] !== "--commit" ||
+        !/^[a-f0-9]{40}$/.test(args[3])
+      )
+        throw new Error(
+          "Use --profile web-client-regressions --commit FULL40 for a clean current commit, or no arguments for the frozen legacy profile.",
+        );
+      options.profileId = args[1];
+      options.commit = args[3];
+    }
+    await setupDevelopment(options);
+  } catch (error) {
     console.error(
-      "Run node --import tsx scripts/setup-development.mjs with the documented dedicated local Docker VM already running.",
+      error instanceof Error &&
+        /^(?:Use --profile|Reusable profiles require|The retained profile catalog|The reusable profile baseline)/.test(
+          error.message,
+        )
+        ? error.message
+        : genericFailure().message,
     );
     process.exitCode = 1;
-  } else {
-    try {
-      await setupDevelopment();
-    } catch {
-      console.error(genericFailure().message);
-      process.exitCode = 1;
-    }
   }
 }

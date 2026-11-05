@@ -6,16 +6,17 @@ import {
   type ReactNode,
 } from "react";
 import {
-  developmentInputSchema,
+  developmentBaselineAccepted,
   developmentBaselineReproduced,
   developmentReview,
   type DevelopmentCheck,
-  type DevelopmentInput,
   type DevelopmentProfile,
   type DevelopmentRun,
   type DevelopmentRuntime,
 } from "@vuzmi/core";
 import { ApiError } from "./api";
+import { DevelopmentProfileDetails as ProfileDetails } from "./DevelopmentProfileDetails";
+import { DevelopmentApplicationPanel } from "./DevelopmentApplication";
 import { Icon } from "./icons";
 import {
   createDevelopment,
@@ -38,6 +39,15 @@ import {
   sameDevelopmentVersion,
   type DevelopmentReviewState,
 } from "./developmentReview";
+import {
+  captureDevelopmentAdmission,
+  developmentAdmissionKey,
+  developmentProfileAvailable,
+  developmentProfileLabel,
+  developmentProfiles,
+  observeDevelopmentProfile,
+  type DevelopmentAdmission,
+} from "./developmentProfiles";
 
 const labels: Record<DevelopmentRun["status"], string> = {
   queued: "Queued",
@@ -55,9 +65,6 @@ const checkLabels: Record<DevelopmentCheck["status"], string> = {
   cancelled: "Cancelled",
   unavailable: "Unavailable",
 };
-const defaultTitle = "Fix unreadable 401 session expiry";
-const defaultBrief =
-  "Make HTTP 401 authoritative in the web API client: expire the owner session before trying to parse a response body, including unreadable or malformed JSON. Preserve successful JSON responses, readable error handling and distinct connection failures. Change only the permitted API client file and satisfy the pinned checks.";
 const message = (cause: unknown) =>
   cause instanceof Error
     ? cause.message
@@ -183,9 +190,9 @@ export function DevelopmentView({ runId }: { runId?: string }) {
         <p>
           <strong>Local review package. Your checkout stays unchanged.</strong>
           <br />
-          The first profile targets web session expiry in one permitted file.
-          Applying a patch, opening a PR, merging and deploying remain separate
-          actions.
+          Choose an operator-provisioned source snapshot and trusted checks.
+          Package approval saves the reviewed output; local work-branch
+          application requires a separate explicit action.
         </p>
       </div>
       <div className="development-readiness" role="status">
@@ -318,13 +325,27 @@ function DevelopmentForm({
   onRefresh: () => void;
   onCreated: (run: DevelopmentRun) => void;
 }) {
-  const [title, setTitle] = useState(defaultTitle),
-    [brief, setBrief] = useState(defaultBrief),
+  const [title, setTitle] = useState(""),
+    [brief, setBrief] = useState(""),
     [issueNumber, setIssueNumber] = useState("");
+  const [selectedProfile, setSelectedProfile] =
+    useState<DevelopmentProfile | null>(() =>
+      observeDevelopmentProfile(null, runtime),
+    );
+  const pinnedProfile = observeDevelopmentProfile(selectedProfile, runtime);
+  const profiles = developmentProfiles(runtime);
+  const profileAvailable =
+    developmentProfileAvailable(pinnedProfile, runtime) && !runtimeError;
+  useEffect(() => {
+    if (!selectedProfile && pinnedProfile) setSelectedProfile(pinnedProfile);
+  }, [selectedProfile, pinnedProfile]);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
     [uncertain, setUncertain] = useState(false);
-  const attempt = useRef<{ key: string; input: DevelopmentInput } | null>(null);
+  const attempt = useRef<DevelopmentAdmission | null>(null);
+  const taskFields = { title, brief, issueNumber };
+  const retryUnchanged =
+    attempt.current?.key === developmentAdmissionKey(taskFields, pinnedProfile);
   const active = useRef(true),
     pending = useRef(false),
     controller = useRef<AbortController | null>(null);
@@ -344,7 +365,7 @@ function DevelopmentForm({
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (pending.current) return;
-    if (!runtime?.ready || !runtime.profile || runtimeError) {
+    if (!retryUnchanged && !profileAvailable) {
       setError(
         runtimeError ??
           runtime?.reason ??
@@ -352,23 +373,20 @@ function DevelopmentForm({
       );
       return;
     }
-    const value = {
-      title,
-      brief,
-      model: runtime.defaultModel,
-      ...(issueNumber ? { issueNumber: Number(issueNumber) } : {}),
-    };
-    const key = JSON.stringify({ title, brief, issueNumber });
-    const input =
-      attempt.current?.key === key
-        ? attempt.current.input
-        : { ...value, requestId: crypto.randomUUID() };
-    const parsed = developmentInputSchema.safeParse(input);
-    if (!parsed.success) {
-      setError(parsed.error.issues.map((issue) => issue.message).join(" "));
+    let captured: DevelopmentAdmission;
+    try {
+      captured = captureDevelopmentAdmission(
+        attempt.current,
+        taskFields,
+        pinnedProfile,
+        runtime?.defaultModel ?? "",
+        () => crypto.randomUUID(),
+      );
+    } catch (cause) {
+      setError(message(cause));
       return;
     }
-    attempt.current = { key, input: parsed.data };
+    attempt.current = captured;
     pending.current = true;
     setBusy(true);
     setError(null);
@@ -376,7 +394,7 @@ function DevelopmentForm({
     controller.current = new AbortController();
     try {
       const result = await createDevelopment(
-        parsed.data,
+        captured.input,
         controller.current.signal,
       );
       if (active.current) onCreated(result.run);
@@ -400,7 +418,9 @@ function DevelopmentForm({
     >
       <div className="development-section-heading">
         <div>
-          <div className="section-kicker">WEB SESSION EXPIRY / PROFILE V1</div>
+          <div className="section-kicker">
+            PINNED SOURCE / TRUSTED REGRESSIONS
+          </div>
           <h2 id="development-create-title">New development run</h2>
         </div>
         <button
@@ -418,6 +438,48 @@ function DevelopmentForm({
           void submit(event);
         }}
       >
+        <label className="field-label" htmlFor="development-profile">
+          Provisioned development profile
+        </label>
+        <select
+          id="development-profile"
+          value={pinnedProfile?.profileHash ?? ""}
+          disabled={busy}
+          onChange={(event) => {
+            const selected = profiles.find(
+              (profile) => profile.profileHash === event.target.value,
+            );
+            if (selected) {
+              setSelectedProfile(selected);
+              changed();
+            }
+          }}
+        >
+          {!pinnedProfile && (
+            <option value="">No provisioned profile available</option>
+          )}
+          {pinnedProfile &&
+            !profiles.some(
+              (profile) => profile.profileHash === pinnedProfile.profileHash,
+            ) && (
+              <option value={pinnedProfile.profileHash}>
+                {developmentProfileLabel(pinnedProfile)} ·{" "}
+                {pinnedProfile.baseCommit.slice(0, 12)} · Unavailable selection
+              </option>
+            )}
+          {profiles.map((profile) => (
+            <option key={profile.profileHash} value={profile.profileHash}>
+              {developmentProfileLabel(profile)} ·{" "}
+              {profile.baseCommit.slice(0, 12)} · {profile.files.length}{" "}
+              permitted {profile.files.length === 1 ? "file" : "files"}
+            </option>
+          ))}
+        </select>
+        <p className="knowledge-hint">
+          This selects an immutable snapshot provisioned by the operator.
+          Background refreshes cannot replace your selected commit or file
+          scope.
+        </p>
         <label className="field-label" htmlFor="development-title">
           Task title
         </label>
@@ -476,9 +538,9 @@ function DevelopmentForm({
           <strong>{runtime?.defaultModel || "Not available"}</strong>
           <small>Server-configured for this profile · No cloud fallback</small>
         </div>
-        {runtime?.profile ? (
+        {pinnedProfile ? (
           <ProfileDetails
-            profile={runtime.profile}
+            profile={pinnedProfile}
             title="Pinned context and permitted changes"
           />
         ) : (
@@ -487,13 +549,13 @@ function DevelopmentForm({
             available. This form cannot start without it.
           </p>
         )}
-        {(!runtime?.ready || runtimeError) && (
+        {!profileAvailable && (
           <div className="inline-error" role="status">
-            <strong>Isolated runner unavailable</strong>
+            <strong>Selected profile is unavailable</strong>
             <p>
               {runtimeError ??
                 runtime?.reason ??
-                "No ready runner/profile was returned by the server."}
+                "The selected snapshot is not in the ready catalog. Choose an available profile explicitly or refresh readiness."}
             </p>
             <button
               type="button"
@@ -503,6 +565,12 @@ function DevelopmentForm({
               Refresh readiness
             </button>
             <p>No host-execution or patch-only fallback is available.</p>
+            {retryUnchanged && (
+              <p>
+                An unchanged retry can still check its original admission
+                receipt. It cannot silently use a replacement profile.
+              </p>
+            )}
           </div>
         )}
         {error && (
@@ -530,12 +598,7 @@ function DevelopmentForm({
           <button
             className="button button-primary"
             type="submit"
-            disabled={
-              busy ||
-              !runtime?.ready ||
-              !runtime.profile ||
-              Boolean(runtimeError)
-            }
+            disabled={busy || (!retryUnchanged && !profileAvailable)}
           >
             <Icon
               name={busy ? "refresh" : "arrow"}
@@ -652,8 +715,8 @@ function DevelopmentDetail({
   const shown = displayed ? developmentVersion(displayed) : null;
   const changed = Boolean(
     review &&
-      developmentVersion(review.latest) &&
-      !sameDevelopmentVersion(shown, developmentVersion(review.latest)),
+    developmentVersion(review.latest) &&
+    !sameDevelopmentVersion(shown, developmentVersion(review.latest)),
   );
   const opened = Boolean(
     review && sameDevelopmentVersion(review.opened, shown),
@@ -916,7 +979,10 @@ function DevelopmentDetail({
             title="Proposed file change"
             accessory={
               displayed.candidate && (
-                <span className="revision-label">1 permitted file</span>
+                <span className="revision-label">
+                  {displayed.candidate.files.length} changed /{" "}
+                  {displayed.profile.files.length} permitted
+                </span>
               )
             }
           >
@@ -924,8 +990,8 @@ function DevelopmentDetail({
               <>
                 <p>{displayed.candidate.summary}</p>
                 <p className="knowledge-hint">
-                  Validated model-proposed replacement · Full-file unified diff
-                  · {bytes(displayed.candidate.diff)} UTF-8 bytes
+                  Model-proposed replacements · Full-file unified diff ·{" "}
+                  {bytes(displayed.candidate.diff)} UTF-8 bytes
                 </p>
                 <div
                   className="development-diff"
@@ -987,6 +1053,7 @@ function DevelopmentDetail({
             <CheckResult
               title="Baseline checks"
               receipt={displayed.baseline}
+              profile={displayed.profile}
               running={
                 latestRun.status === "running" &&
                 latestRun.execution?.phase === "baseline"
@@ -995,6 +1062,7 @@ function DevelopmentDetail({
             <CheckResult
               title="Candidate checks"
               receipt={displayed.checks}
+              profile={displayed.profile}
               running={
                 latestRun.status === "running" &&
                 latestRun.execution?.phase === "candidate"
@@ -1062,6 +1130,14 @@ function DevelopmentDetail({
               )}
             </Panel>
           )}
+          {latestRun.status === "completed" &&
+            latestRun.artifact &&
+            latestRun.decision?.decision === "approve" && (
+              <DevelopmentApplicationPanel
+                key={`${latestRun.id}:${latestRun.artifact.sha256}`}
+                run={latestRun}
+              />
+            )}
           <Panel title="Execution trail">
             <ol className="development-events">
               {latestRun.events.map((event) => (
@@ -1106,7 +1182,7 @@ function DevelopmentDetail({
                 : latestRun.status === "cancelled"
                   ? "No approved development package was saved."
                   : latestRun.status === "waiting_approval"
-                    ? "Inspect the diff, baseline failure, candidate checks and exact package before deciding."
+                    ? "Inspect the diff, profile baseline, candidate regressions and exact package before deciding. Check task fulfillment separately."
                     : "Only persisted model output and check receipts establish what happened."}
             </p>
             <div className="review-action-scope">
@@ -1178,6 +1254,19 @@ function DevelopmentDetail({
                   <Icon name={downloading ? "refresh" : "download"} size={17} />
                   {downloading ? "Verifying package…" : "Download package"}
                 </button>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => {
+                    const node = document.getElementById(
+                      "development-application-title",
+                    );
+                    node?.focus({ preventScroll: true });
+                    node?.scrollIntoView({ block: "start" });
+                  }}
+                >
+                  Review local work branch
+                </button>
                 <TechnicalValues
                   entries={[
                     ["Saved artifact SHA-256", latestRun.artifact.sha256],
@@ -1199,8 +1288,9 @@ function DevelopmentDetail({
               </p>
             )}
             <p className="knowledge-hint">
-              No checkout application, pull request, merge, deployment or
-              publication occurs here.
+              Package approval does not apply code, push, open a pull request,
+              merge, deploy or publish. Local branch application is a separate
+              action.
             </p>
             <button
               className="button button-small button-secondary"
@@ -1249,70 +1339,22 @@ function DevelopmentDetail({
   );
 }
 
-function ProfileDetails({
-  profile,
-  title = "Pinned source and check profile",
-}: {
-  profile: DevelopmentProfile;
-  title?: string;
-}) {
-  return (
-    <div className="development-profile">
-      <TechnicalValues
-        entries={[
-          ["Repository", profile.repository],
-          ["Full base commit", profile.baseCommit],
-          ["Permitted editable file", profile.files[0].path],
-          ["Check profile", `${profile.id}@${profile.version}`],
-        ]}
-      />
-      <details className="development-disclosure">
-        <summary>{title}</summary>
-        <p className="knowledge-hint">
-          Only the literal file above can change. The model cannot select
-          commands, dependencies, images or expanded permissions.
-        </p>
-        <TechnicalValues
-          entries={[
-            ["Platform", profile.platform],
-            ["Policy", profile.policyId],
-            ["Resolved base image", profile.baseImage],
-            ["Profile SHA-256", profile.profileHash],
-            ["Acceptance checks SHA-256", profile.acceptanceHash],
-            ["Dependency lockfile SHA-256", profile.lockfileHash],
-          ]}
-        />
-        <p className="field-label">Fixed command</p>
-        <pre className="development-code" tabIndex={0}>
-          {JSON.stringify(profile.command, null, 2)}
-        </pre>
-        <p className="field-label">
-          Exact pinned source · {bytes(profile.files[0].text)} UTF-8 bytes
-        </p>
-        <TechnicalValues
-          entries={[["Source SHA-256", profile.files[0].sha256]]}
-        />
-        <pre
-          className="development-code"
-          tabIndex={0}
-          aria-label="Exact pinned source text"
-        >
-          {profile.files[0].text}
-        </pre>
-      </details>
-    </div>
-  );
-}
 function CheckResult({
   title,
   receipt,
   running,
+  profile,
 }: {
   title: string;
   receipt: DevelopmentCheck | null;
   running: boolean;
+  profile: DevelopmentProfile;
 }) {
-  const reproduced = Boolean(receipt && developmentBaselineReproduced(receipt));
+  const reproduced = Boolean(
+    profile.id === "web-api-status-authority" &&
+    receipt &&
+    developmentBaselineReproduced(receipt),
+  );
   return (
     <Panel
       title={title}
@@ -1340,9 +1382,13 @@ function CheckResult({
         <>
           {receipt.phase === "baseline" && (
             <p className="knowledge-hint">
-              {developmentBaselineReproduced(receipt)
-                ? "Expected baseline failure reproduced: the two session-expiry assertions fail and the four remaining checks pass."
-                : "This baseline receipt does not establish the required reproduction. Inspect its actual assertions and outcome."}
+              {profile.baselineExpectation === "green"
+                ? developmentBaselineAccepted(receipt, profile)
+                  ? "The named regressions passed on the pinned baseline. This establishes the starting check state, not completion of the task."
+                  : "A passing baseline is required for this profile and was not established. Inspect the recorded outcome."
+                : developmentBaselineReproduced(receipt)
+                  ? "Expected baseline failure reproduced: the two session-expiry assertions fail and the four remaining checks pass."
+                  : "This baseline receipt does not establish the required reproduction. Inspect its actual assertions and outcome."}
             </p>
           )}
           <TechnicalValues
@@ -1379,6 +1425,10 @@ function CheckResult({
               profile.
             </p>
           )}
+          <p className="knowledge-hint">
+            This receipt covers only its named trusted checks. Passing
+            regressions does not prove task fulfillment or code safety.
+          </p>
           <details className="development-disclosure">
             <summary>Exact command, execution and logs</summary>
             <TechnicalValues
@@ -1419,7 +1469,8 @@ function DevelopmentSteps({ run }: { run: DevelopmentRun }) {
     [
       "Baseline checks",
       run.baseline
-        ? developmentBaselineReproduced(run.baseline)
+        ? run.profile.id === "web-api-status-authority" &&
+          developmentBaselineReproduced(run.baseline)
           ? "Reproduced"
           : checkLabels[run.baseline.status]
         : run.execution?.phase === "baseline"

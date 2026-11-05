@@ -1,5 +1,6 @@
 import {
-  developmentBaselineReproduced,
+  developmentBaselineAccepted,
+  developmentCandidatePassed,
   type DecisionInput,
   type DevelopmentRun,
 } from "@vuzmi/core";
@@ -23,8 +24,9 @@ export function developmentVersion(
     run.reviewFingerprint &&
     run.candidate &&
     run.baseline &&
-    developmentBaselineReproduced(run.baseline) &&
-    run.checks?.status === "passed"
+    developmentBaselineAccepted(run.baseline, run.profile) &&
+    run.checks &&
+    developmentCandidatePassed(run.checks, run.profile)
     ? { id: run.id, revision: run.revision, fingerprint: run.reviewFingerprint }
     : null;
 }
@@ -34,10 +36,10 @@ export function sameDevelopmentVersion(
 ): boolean {
   return Boolean(
     a &&
-      b &&
-      a.id === b.id &&
-      a.revision === b.revision &&
-      a.fingerprint === b.fingerprint,
+    b &&
+    a.id === b.id &&
+    a.revision === b.revision &&
+    a.fingerprint === b.fingerprint,
   );
 }
 export function createDevelopmentReview(

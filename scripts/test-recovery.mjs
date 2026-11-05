@@ -282,6 +282,26 @@ try {
     "local-workspace",
     development.id,
   );
+  await repository.applications.heartbeat(developmentWorkerId, {
+    ready: true,
+    reason: "Synthetic recovery registration; no Git effects.",
+    repositoryIdentity: "1".repeat(64),
+  });
+  const applicationPlan = (
+    await repository.applications.plan("local-workspace", development.id)
+  ).plan;
+  const expectedApplication = (
+    await repository.applications.authorize(
+      "local-workspace",
+      development.id,
+      {
+        requestId: randomUUID(),
+        packageSha256: applicationPlan.packageSha256,
+        planFingerprint: applicationPlan.fingerprint,
+      },
+      { id: owner.id, name: owner.name },
+    )
+  ).operation;
   const interruptedDevelopment = (
     await repository.development.create(developmentFixtureInput(), {
       id: randomUUID(),
@@ -435,6 +455,7 @@ try {
             "vuzmi-generate-release",
             "vuzmi-index-source",
             "vuzmi-development-patch",
+            "vuzmi-development-application",
           ],
         ],
       )
@@ -470,6 +491,34 @@ try {
     0,
   );
   assert.equal((await restoredRepository.development.runtime()).ready, false);
+  assert.equal(
+    (
+      await targetSql.query(
+        "SELECT count(*)::int count FROM vuzmi.development_application_runtime",
+      )
+    ).rows[0].count,
+    0,
+  );
+  const restoredApplication = await restoredRepository.applications.get(
+    "local-workspace",
+    development.id,
+  );
+  assert.equal(restoredApplication.status, "unconfirmed");
+  assert.equal(
+    restoredApplication.error.code,
+    "APPLICATION_RESTORE_QUARANTINED",
+  );
+  assert.deepEqual(restoredApplication.plan, expectedApplication.plan);
+  assert.equal(restoredApplication.receipt, undefined);
+  let applicationEffects = 0;
+  await restoredRepository.applications.reconcile({
+    inspect: async () => {
+      applicationEffects++;
+      return "absent";
+    },
+  });
+  assert.equal(applicationEffects, 0);
+
   assert.deepEqual(
     await restoredRepository.development.get("local-workspace", development.id),
     expectedDevelopment,
@@ -565,7 +614,7 @@ try {
     expectedRun,
   );
   console.info(
-    "Recovery drill passed: isolated native dump/restore, permission/checksum/empty-target guards, source/memory/vectors, GitHub origin/import receipt replay, exact run/artifact/fingerprint/revision/events and human revision history/package, exact development package and interrupted-attempt/runtime quarantine, owner/session binding, session revocation, and pending-job quarantine.",
+    "Recovery drill passed: isolated native dump/restore, permission/checksum/empty-target guards, source/memory/vectors, GitHub origin/import receipt replay, exact run/artifact/fingerprint/revision/events and human revision history/package, exact development package, separate application authorization/restore quarantine and interrupted-attempt/runtime quarantine, owner/session binding, session revocation, and pending-job quarantine.",
   );
   console.info(
     "Only disposable clusters and synthetic fixtures were used. No operator database, model, or cloud service was contacted.",

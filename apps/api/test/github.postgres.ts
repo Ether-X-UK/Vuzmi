@@ -149,7 +149,7 @@ test(
         );
         assert.deepEqual(
           after.rows.map((row) => row.version),
-          [1, 2, 3, 4],
+          [1, 2, 3, 4, 5],
         );
         assert.deepEqual(after.rows.slice(0, 2), checksums.rows);
         assert.deepEqual(

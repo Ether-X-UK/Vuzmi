@@ -7,6 +7,12 @@ import test from "node:test";
 import {
   DEVELOPMENT_CHECK_NAMES,
   DEVELOPMENT_COMMAND,
+  DEVELOPMENT_REGRESSION_PATHS,
+  DEVELOPMENT_REGRESSION_COMMAND,
+  DEVELOPMENT_REGRESSION_CHECK_FILES,
+  DEVELOPMENT_REGRESSION_CHECK_NAMES,
+  developmentCheckNames,
+  developmentAcceptanceFingerprintInput,
   developmentBaselineReproduced,
   developmentCheckLogsInput,
   developmentProfileFingerprintInput,
@@ -51,16 +57,47 @@ function profile(): DevelopmentProfile {
     profileHash: hash(developmentProfileFingerprintInput(unsigned)),
   };
 }
-function tap(pass = true) {
+function regressionProfile(): DevelopmentProfile {
+  const legacy = profile();
+  const unsigned: Omit<DevelopmentProfile, "profileHash"> = {
+    ...legacy,
+    id: "web-client-regressions",
+    baseCommit: "e".repeat(40),
+    files: DEVELOPMENT_REGRESSION_PATHS.map((path) => ({
+      path,
+      text: legacy.files[0].text,
+      sha256: legacy.files[0].sha256,
+    })),
+    command: [...DEVELOPMENT_REGRESSION_COMMAND],
+    sourceTree: "f".repeat(40),
+    sourceArchiveSha256: "e".repeat(64),
+    checkFiles: DEVELOPMENT_REGRESSION_CHECK_FILES.map((path) => ({
+      path,
+      sha256: "f".repeat(64),
+    })),
+    checkNames: [...DEVELOPMENT_REGRESSION_CHECK_NAMES],
+    baselineExpectation: "green",
+    checkHarnessSha256: "a".repeat(64),
+  };
+  delete (unsigned as Partial<DevelopmentProfile>).profileHash;
+  unsigned.acceptanceHash = hash(
+    developmentAcceptanceFingerprintInput(unsigned),
+  );
+  return {
+    ...unsigned,
+    profileHash: hash(developmentProfileFingerprintInput(unsigned)),
+  };
+}
+function tap(pass = true, names: readonly string[] = DEVELOPMENT_CHECK_NAMES) {
   return [
     "TAP version 13",
-    ...DEVELOPMENT_CHECK_NAMES.map(
+    ...names.map(
       (name, i) => `${pass || i >= 2 ? "ok" : "not ok"} ${i + 1} - ${name}`,
     ),
-    "1..6",
-    "# tests 6",
+    `1..${names.length}`,
+    `# tests ${names.length}`,
     "# suites 0",
-    `# pass ${pass ? 6 : 4}`,
+    `# pass ${pass ? names.length : names.length - 2}`,
     `# fail ${pass ? 0 : 2}`,
     "# cancelled 0",
     "# skipped 0",
@@ -94,6 +131,7 @@ function fixture(
     cleanupFails?: boolean;
     collision?: boolean;
     timeout?: boolean;
+    profile?: DevelopmentProfile;
     badAncestry?: boolean;
     onCleanup?: () => void;
   } = {},
@@ -101,7 +139,7 @@ function fixture(
   const directory = mkdtempSync(join(tmpdir(), "vuzmi-runner-unit-"));
   chmodSync(directory, 0o700);
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const p = profile(),
+  const p = settings.profile ?? profile(),
     configPath = join(directory, "development-runner.json");
   writeFileSync(
     configPath,
@@ -133,6 +171,8 @@ function fixture(
                   "io.vuzmi.development.lockfile": p.lockfileHash,
                   "io.vuzmi.development.base": p.baseCommit,
                   "io.vuzmi.development.policy": p.policyId,
+                  "io.vuzmi.development.tree": p.sourceTree,
+                  "io.vuzmi.development.archive": p.sourceArchiveSha256,
                 },
               },
             },
@@ -159,7 +199,7 @@ function fixture(
     if (args[0] === "build") {
       assert.ok(
         options.input?.includes(
-          Buffer.from("COPY --chown=1000:1000 candidate.ts"),
+          Buffer.from("COPY --chown=1000:1000 candidate"),
         ),
       );
       assert.ok(!options.input?.includes(Buffer.from("\nRUN ")));
@@ -191,6 +231,8 @@ function fixture(
             "io.vuzmi.development.lockfile": p.lockfileHash,
             "io.vuzmi.development.base": p.baseCommit,
             "io.vuzmi.development.policy": p.policyId,
+            "io.vuzmi.development.tree": p.sourceTree,
+            "io.vuzmi.development.archive": p.sourceArchiveSha256,
           },
         },
       };
@@ -216,8 +258,8 @@ function fixture(
         Config: {
           Image: selected,
           User: "1000:1000",
-          Entrypoint: [DEVELOPMENT_COMMAND[0]],
-          Cmd: DEVELOPMENT_COMMAND.slice(1),
+          Entrypoint: [p.command[0]],
+          Cmd: p.command.slice(1),
           WorkingDir: "/opt/vuzmi/repository",
           Labels: labels,
           Env: ["PATH=/usr/local/bin"],
@@ -250,7 +292,8 @@ function fixture(
       return result("fixture-container-id");
     }
     if (args[0] === "start") {
-      const passed = container.Image === childImage;
+      const passed =
+        container.Image === childImage || p.id === "web-client-regressions";
       container.State = {
         StartedAt: new Date().toISOString(),
         Running: !!settings.timeout,
@@ -259,7 +302,9 @@ function fixture(
       };
       return {
         ...result(
-          settings.badTap ? "TAP version 13\n1..0\n# tests 0\n" : tap(passed),
+          settings.badTap
+            ? "TAP version 13\n1..0\n# tests 0\n"
+            : tap(passed, developmentCheckNames(p)),
           passed ? 0 : 1,
         ),
         timedOut: !!settings.timeout,
@@ -328,6 +373,65 @@ test("candidate creates a COPY-only child, pins all effective controls and requi
   assert.equal(
     calls.filter((args) => args[0] === "image" && args[1] === "rm").length,
     1,
+  );
+});
+
+test("reusable retained profile runs a green baseline and bounded multi-file COPY independent of the default", async (t) => {
+  const p = regressionProfile();
+  const f = fixture(t, { profile: p });
+  const legacy = profile();
+  writeFileSync(
+    f.configPath,
+    JSON.stringify({
+      version: 1,
+      dockerBinary: "/fixture/docker",
+      dockerHost: "unix:///fixture/vuzmi.sock",
+      dockerConfig: join(f.configPath, ".."),
+      profile: legacy,
+      profiles: [legacy, p],
+    }),
+  );
+  const readiness = await f.runner.readiness();
+  assert.equal(readiness.ready, true);
+  assert.equal(
+    readiness.profile,
+    undefined,
+    "Unavailable default must not silently retarget",
+  );
+  assert.deepEqual(
+    readiness.profiles?.map((value) => value.profileHash),
+    [p.profileHash],
+  );
+  const baseline = await f.runner.run({ ...f.input, profile: p });
+  assert.equal(baseline.status, "passed");
+  assert.equal(baseline.tests.length, 19);
+  const candidate = validateDevelopmentCandidate(
+    {
+      summary: "Synthetic bounded multi-file profile validation.",
+      files: p.files.slice(0, 2).map((file) => ({
+        path: file.path,
+        beforeSha256: file.sha256,
+        content: file.text + "// profile fixture\n",
+      })),
+    },
+    p,
+    hash,
+  );
+  const checked = await f.runner.run({
+    ...candidateExecution(f.input),
+    profile: p,
+    candidate,
+  });
+  assert.equal(checked.status, "passed");
+  assert.equal(checked.tests.length, 19);
+  const calls = f.calls.length;
+  await assert.rejects(
+    f.runner.run({ ...f.input, profile: { ...p, baseImage: childImage } }),
+  );
+  assert.equal(
+    f.calls.length,
+    calls,
+    "Unknown pinned profile must fail before any Docker effect",
   );
 });
 

@@ -106,10 +106,10 @@ test(
         );
         await repository.close();
         await sql.query(
-          `DROP TABLE "${schema}".development_artifacts,"${schema}".development_attempts,"${schema}".development_run_events,"${schema}".development_runtime,"${schema}".development_runs`,
+          `DROP TABLE "${schema}".development_application_events,"${schema}".development_applications,"${schema}".development_application_runtime,"${schema}".development_profiles,"${schema}".development_artifacts,"${schema}".development_attempts,"${schema}".development_run_events,"${schema}".development_runtime,"${schema}".development_runs`,
         );
         await sql.query(
-          `DELETE FROM "${schema}".schema_migrations WHERE version=4`,
+          `DELETE FROM "${schema}".schema_migrations WHERE version>=4`,
         );
         const reopened = await connect();
         const after = await sql.query(
@@ -117,7 +117,7 @@ test(
         );
         assert.deepEqual(
           after.rows.map((row) => row.version),
-          [1, 2, 3, 4],
+          [1, 2, 3, 4, 5],
         );
         assert.deepEqual(after.rows.slice(0, 3), checksums.rows);
         assert.deepEqual(

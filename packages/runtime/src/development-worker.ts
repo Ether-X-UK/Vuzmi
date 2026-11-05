@@ -23,12 +23,14 @@ export interface DevelopmentRunnerAdapter {
     ready: boolean;
     reason: string;
     profile?: DevelopmentProfile;
+    profiles?: DevelopmentProfile[];
   }>;
   run(input: {
     runId: string;
     attemptId: string;
     phase: "baseline" | "candidate";
     executionId: string;
+    profile?: DevelopmentProfile;
     candidate?: DevelopmentCandidate;
     signal?: AbortSignal;
   }): Promise<DevelopmentCheck>;
@@ -159,6 +161,7 @@ export async function processDevelopmentJob(
         runId: run.id,
         attemptId,
         phase: "baseline",
+        profile: run.profile,
         executionId: run.execution!.id,
         signal,
       }),
@@ -224,6 +227,7 @@ export async function processDevelopmentJob(
         runId: run.id,
         attemptId,
         phase: "candidate",
+        profile: run.profile,
         executionId: run.execution!.id,
         candidate: run.candidate!,
         signal,

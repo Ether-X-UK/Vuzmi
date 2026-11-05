@@ -8,7 +8,7 @@ import {
   developmentProfileSchema,
   developmentProfileFingerprintInput,
   developmentCheckSchema,
-  developmentBaselineReproduced,
+  developmentBaselineAccepted,
   developmentReviewFingerprint,
   parseDevelopmentIntegrity,
   withDevelopmentEvent,
@@ -51,6 +51,7 @@ type Readiness = {
   ready: boolean;
   reason: string;
   profile?: DevelopmentProfile;
+  profiles?: DevelopmentProfile[];
 };
 
 /** Append-only v4; never revise the earlier migration strings. */
@@ -193,7 +194,7 @@ export class DevelopmentRepository {
           400,
         );
       const ready = await client.query(
-        `SELECT 1 FROM ${this.schema}.development_runtime WHERE workspace_id=$1 AND ready AND profile->>'profileHash'=$2 AND seen_at>clock_timestamp()-interval '30 seconds' FOR SHARE`,
+        `SELECT 1 FROM ${this.schema}.development_runtime WHERE workspace_id=$1 AND ready AND (profile->>'profileHash'=$2 OR profiles @> jsonb_build_array(jsonb_build_object('profileHash',$2::text))) AND seen_at>clock_timestamp()-interval '30 seconds' FOR SHARE`,
         [DEVELOPMENT_WORKSPACE, context.profile.profileHash],
       );
       if (!ready.rowCount)
@@ -259,24 +260,55 @@ export class DevelopmentRepository {
         "DEVELOPMENT_INTEGRITY",
         "The runner profile fingerprint is invalid.",
       );
-    if (readiness.ready && !profile)
+    if (readiness.ready && !profile && !readiness.profiles?.length)
       throw new DevelopmentError(
         "DEVELOPMENT_INTEGRITY",
-        "A ready runner requires its immutable profile.",
+        "A ready runner requires a verified immutable profile catalog.",
+      );
+    const profiles = (readiness.profiles ?? (profile ? [profile] : [])).map(
+      (value) => developmentProfileSchema.parse(value),
+    );
+    if (
+      profiles.length > 8 ||
+      new Set(profiles.map((value) => value.profileHash)).size !==
+        profiles.length ||
+      profiles.some(
+        (value) =>
+          sha256(developmentProfileFingerprintInput(value)) !==
+          value.profileHash,
+      ) ||
+      (profile &&
+        !profiles.some((value) => value.profileHash === profile.profileHash))
+    )
+      throw new DevelopmentError(
+        "DEVELOPMENT_INTEGRITY",
+        "The verified profile catalog is inconsistent.",
       );
     await this.options.transaction(async (client) => {
+      for (const item of profiles) {
+        const saved = await client.query(
+          `INSERT INTO ${this.schema}.development_profiles(workspace_id,profile_hash,profile) VALUES($1,$2,$3::jsonb) ON CONFLICT(workspace_id,profile_hash) DO UPDATE SET profile=excluded.profile WHERE ${this.schema}.development_profiles.profile=excluded.profile RETURNING profile_hash`,
+          [DEVELOPMENT_WORKSPACE, item.profileHash, JSON.stringify(item)],
+        );
+        if (saved.rowCount !== 1)
+          throw new DevelopmentError(
+            "DEVELOPMENT_INTEGRITY",
+            "An immutable retained profile cannot be replaced.",
+          );
+      }
       await client.query(
         `UPDATE ${this.schema}.development_attempts a SET seen_at=clock_timestamp() WHERE workspace_id=$1 AND worker_id=$2 AND state='active' AND seen_at>clock_timestamp()-interval '30 seconds' AND EXISTS(SELECT 1 FROM ${this.schema}.development_runtime w WHERE w.workspace_id=a.workspace_id AND w.worker_id=a.worker_id AND w.seen_at>clock_timestamp()-interval '30 seconds')`,
         [DEVELOPMENT_WORKSPACE, workerId],
       );
       await client.query(
-        `INSERT INTO ${this.schema}.development_runtime(workspace_id,worker_id,ready,reason,profile,seen_at) VALUES($1,$2,$3,$4,$5::jsonb,clock_timestamp()) ON CONFLICT(workspace_id,worker_id) DO UPDATE SET ready=excluded.ready,reason=excluded.reason,profile=excluded.profile,seen_at=excluded.seen_at`,
+        `INSERT INTO ${this.schema}.development_runtime(workspace_id,worker_id,ready,reason,profile,profiles,seen_at) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,clock_timestamp()) ON CONFLICT(workspace_id,worker_id) DO UPDATE SET ready=excluded.ready,reason=excluded.reason,profile=excluded.profile,profiles=excluded.profiles,seen_at=excluded.seen_at`,
         [
           DEVELOPMENT_WORKSPACE,
           workerId,
           readiness.ready,
           readiness.reason.slice(0, 600),
           profile ? JSON.stringify(profile) : null,
+          JSON.stringify(profiles),
         ],
       );
     });
@@ -289,7 +321,7 @@ export class DevelopmentRepository {
   }
   async runtime(defaultModel = "qwen3.5:4b"): Promise<DevelopmentRuntime> {
     const result = await this.options.pool.query(
-      `SELECT ready,reason,profile,seen_at,seen_at>clock_timestamp()-interval '30 seconds' AS fresh FROM ${this.schema}.development_runtime WHERE workspace_id=$1 ORDER BY (ready AND seen_at>clock_timestamp()-interval '30 seconds') DESC,seen_at DESC LIMIT 1`,
+      `SELECT ready,reason,profile,profiles,seen_at,seen_at>clock_timestamp()-interval '30 seconds' AS fresh FROM ${this.schema}.development_runtime WHERE workspace_id=$1 ORDER BY (ready AND seen_at>clock_timestamp()-interval '30 seconds') DESC,seen_at DESC LIMIT 1`,
       [DEVELOPMENT_WORKSPACE],
     );
     const row = result.rows[0];
@@ -303,6 +335,13 @@ export class DevelopmentRepository {
         ? developmentProfileSchema.parse(row.profile)
         : null,
       defaultModel,
+      ...(row?.profiles
+        ? {
+            profiles: row.profiles.map((item: unknown) =>
+              developmentProfileSchema.parse(item),
+            ),
+          }
+        : {}),
     };
   }
   private async locked(
@@ -347,7 +386,7 @@ export class DevelopmentRepository {
       const run = await this.locked(client, workspaceId, id);
       if (!run || run.status !== "queued") return undefined;
       const worker = await client.query(
-        `SELECT 1 FROM ${this.schema}.development_runtime WHERE workspace_id=$1 AND worker_id=$2 AND ready AND profile->>'profileHash'=$3 AND seen_at>clock_timestamp()-interval '30 seconds' FOR SHARE`,
+        `SELECT 1 FROM ${this.schema}.development_runtime WHERE workspace_id=$1 AND worker_id=$2 AND ready AND (profile->>'profileHash'=$3 OR profiles @> jsonb_build_array(jsonb_build_object('profileHash',$3::text))) AND seen_at>clock_timestamp()-interval '30 seconds' FOR SHARE`,
         [workspaceId, workerId, run.profile.profileHash],
       );
       if (!worker.rowCount)
@@ -470,13 +509,15 @@ export class DevelopmentRepository {
             "STALE_EXECUTION",
             "The baseline receipt does not identify the reserved execution.",
           );
-        const reproduced = developmentBaselineReproduced(receipt);
+        const reproduced = developmentBaselineAccepted(receipt, run.profile);
         return withDevelopmentEvent(
           run,
           "development.baseline_recorded",
           reproduced
-            ? "The isolated baseline reproduced the two expected session-expiry failures."
-            : "The baseline did not establish the required known failure; generation is blocked.",
+            ? run.profile.id === "web-api-status-authority"
+              ? "The isolated baseline reproduced the two expected session-expiry failures."
+              : "The pinned baseline passed its named regression checks."
+            : "The baseline did not satisfy this pinned profile; generation is blocked.",
           this.options.now().toISOString(),
           {
             baseline: receipt,
@@ -489,7 +530,7 @@ export class DevelopmentRepository {
                   error: {
                     code: "BASELINE_NOT_REPRODUCED",
                     message:
-                      "The pinned baseline did not reproduce the expected check failures.",
+                      "The pinned baseline did not satisfy the immutable check profile.",
                   },
                 }),
           },
@@ -518,16 +559,16 @@ export class DevelopmentRepository {
           run.stage !== "generating" ||
           run.candidate ||
           !run.baseline ||
-          !developmentBaselineReproduced(run.baseline)
+          !developmentBaselineAccepted(run.baseline, run.profile)
         )
           throw new DevelopmentError(
             "INVALID_STAGE",
-            "Only a reproduced baseline may receive one local model proposal.",
+            "Only an accepted pinned baseline may receive one local model proposal.",
           );
         return withDevelopmentEvent(
           run,
           "development.patch_validated",
-          "The local model returned one server-validated permitted replacement. Checks have not passed yet.",
+          "The local model returned server-validated permitted replacements. Checks have not passed yet.",
           this.options.now().toISOString(),
           {
             candidate: value.candidate,

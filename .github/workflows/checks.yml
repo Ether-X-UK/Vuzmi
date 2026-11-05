@@ -63,6 +63,9 @@ jobs:
       - name: Provision the pinned offline development check image
         run: npm run setup:development
 
+      - name: Provision the reusable current-commit development profile
+        run: npm run setup:development -- --profile web-client-regressions --commit "$GITHUB_SHA"
+
       - name: Verify actual isolated development execution
         run: npm run test:development-runner
 

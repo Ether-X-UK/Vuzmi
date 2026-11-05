@@ -456,3 +456,173 @@ test(
     );
   },
 );
+
+test(
+  "local branch application HTTP authorization is separate, owner/origin-bound, strict and idempotent",
+  { skip: !databaseUrl },
+  async (t) => {
+    const { app, repository, execute, workerId } = await fixture(t);
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/development",
+      headers,
+      payload: developmentFixtureInput(),
+    });
+    const runId = created.json().run.id as string;
+    assert.equal(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/development/${runId}/application-plan`,
+          headers,
+        })
+      ).statusCode,
+      503,
+    );
+    await repository.applications.heartbeat(workerId, {
+      ready: true,
+      reason: "Synthetic registered Git fixture; HTTP tests create no refs.",
+      repositoryIdentity: "1".repeat(64),
+    });
+    assert.equal(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/development/${runId}/application-plan`,
+          headers,
+        })
+      ).statusCode,
+      409,
+    );
+    await execute(runId);
+    const waiting = (await repository.development.get(
+      "local-workspace",
+      runId,
+    ))!;
+    await repository.development.decide(
+      "local-workspace",
+      runId,
+      {
+        decision: "approve",
+        revision: waiting.revision,
+        fingerprint: waiting.reviewFingerprint!,
+      },
+      owner,
+    );
+    const before = (
+      await repository.development.package("local-workspace", runId)
+    ).content;
+    assert.deepEqual(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/development/${runId}/application`,
+          headers,
+        })
+      ).json(),
+      { operation: null },
+    );
+    const planResponse = await app.inject({
+      method: "GET",
+      url: `/v1/development/${runId}/application-plan`,
+      headers,
+    });
+    assert.equal(planResponse.statusCode, 200);
+    const { plan, available } = planResponse.json();
+    assert.equal(available, true);
+    assert.equal(plan.packageSha256, digest(before));
+    const payload = {
+        requestId: randomUUID(),
+        packageSha256: plan.packageSha256,
+        planFingerprint: plan.fingerprint,
+      },
+      url = `/v1/development/${runId}/application`;
+    assert.equal(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          headers: { origin: headers.origin },
+          payload,
+        })
+      ).statusCode,
+      401,
+    );
+    assert.equal(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          headers: { cookie: headers.cookie },
+          payload,
+        })
+      ).statusCode,
+      403,
+    );
+    assert.equal(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          headers,
+          payload: { ...payload, destinationRef: "refs/heads/main" },
+        })
+      ).statusCode,
+      400,
+    );
+    assert.equal(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          headers,
+          payload: { ...payload, packageSha256: "0".repeat(64) },
+        })
+      ).statusCode,
+      409,
+    );
+    const authorized = await app.inject({
+      method: "POST",
+      url,
+      headers,
+      payload,
+    });
+    assert.equal(authorized.statusCode, 201);
+    assert.equal(authorized.json().operation.actor, owner.id);
+    assert.equal(authorized.json().operation.status, "queued");
+    await repository.applications.removeHeartbeat(workerId);
+    const replay = await app.inject({ method: "POST", url, headers, payload });
+    assert.equal(replay.statusCode, 200);
+    assert.equal(replay.json().replayed, true);
+    assert.deepEqual(replay.json().operation, authorized.json().operation);
+    assert.equal(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/development/${runId}/application-plan`,
+          headers,
+        })
+      ).json().available,
+      false,
+    );
+    assert.equal(
+      (await app.inject({ method: "GET", url, headers: {} })).statusCode,
+      401,
+    );
+    assert.equal(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          headers,
+          payload: { ...payload, requestId: randomUUID() },
+        })
+      ).statusCode,
+      409,
+    );
+    assert.equal(
+      (await repository.development.package("local-workspace", runId)).content,
+      before,
+    );
+  },
+);

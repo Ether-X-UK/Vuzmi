@@ -3,11 +3,17 @@ import {
   developmentPackageSchema,
   developmentRunSchema,
   developmentRuntimeSchema,
+  developmentApplicationPlanSchema,
+  developmentApplicationInputSchema,
+  developmentApplicationSchema,
   type DecisionInput,
   type DevelopmentInput,
   type DevelopmentPackage,
   type DevelopmentRun,
   type DevelopmentRuntime,
+  type DevelopmentApplicationPlan,
+  type DevelopmentApplicationInput,
+  type DevelopmentApplication,
 } from "@vuzmi/core";
 import { ApiError } from "./api";
 
@@ -227,6 +233,90 @@ export async function getDevelopmentPackage(
       const parsed = developmentPackageSchema.safeParse(value);
       if (!parsed.success || parsed.data.review.runId !== id) return invalid();
       return { content, value: parsed.data };
+    },
+  );
+}
+
+export async function getDevelopmentApplicationPlan(
+  id: string,
+  signal?: AbortSignal,
+): Promise<{
+  plan: DevelopmentApplicationPlan;
+  available: boolean;
+  reason: string | null;
+}> {
+  return call(
+    `/${encodeURIComponent(id)}/application-plan`,
+    { signal },
+    (value) => {
+      const body = object(value),
+        parsed = developmentApplicationPlanSchema.safeParse(body.plan);
+      if (
+        !parsed.success ||
+        parsed.data.runId !== id ||
+        typeof body.available !== "boolean" ||
+        !(body.reason === null || typeof body.reason === "string")
+      )
+        return invalid();
+      return {
+        plan: parsed.data,
+        available: body.available,
+        reason: body.reason as string | null,
+      };
+    },
+  );
+}
+
+function applicationResponse(
+  value: unknown,
+  id: string,
+): DevelopmentApplication {
+  const parsed = developmentApplicationSchema.safeParse(value);
+  if (
+    !parsed.success ||
+    parsed.data.runId !== id ||
+    parsed.data.plan.runId !== id ||
+    parsed.data.plan.destinationRef !== `refs/heads/vuzmi/development/${id}`
+  )
+    return invalid();
+  return parsed.data;
+}
+
+export async function getDevelopmentApplication(
+  id: string,
+  signal?: AbortSignal,
+): Promise<DevelopmentApplication | null> {
+  return call(`/${encodeURIComponent(id)}/application`, { signal }, (value) => {
+    const body = object(value);
+    return body.operation === null
+      ? null
+      : applicationResponse(body.operation, id);
+  });
+}
+
+export async function authorizeDevelopmentApplication(
+  id: string,
+  input: DevelopmentApplicationInput,
+  signal?: AbortSignal,
+): Promise<{ operation: DevelopmentApplication; replayed: boolean }> {
+  return call(
+    `/${encodeURIComponent(id)}/application`,
+    {
+      method: "POST",
+      body: JSON.stringify(developmentApplicationInputSchema.parse(input)),
+      signal,
+    },
+    (value) => {
+      const body = object(value),
+        operation = applicationResponse(body.operation, id);
+      if (
+        typeof body.replayed !== "boolean" ||
+        operation.requestId !== input.requestId ||
+        operation.plan.fingerprint !== input.planFingerprint ||
+        operation.plan.packageSha256 !== input.packageSha256
+      )
+        return invalid();
+      return { operation, replayed: body.replayed };
     },
   );
 }

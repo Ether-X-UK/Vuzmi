@@ -11,6 +11,8 @@ import {
   developmentCheckSchema,
   developmentProfileFingerprintInput,
   developmentProfileSchema,
+  developmentCheckNames,
+  developmentAcceptanceFingerprintInput,
   validateDevelopmentCandidate,
   type CheckReceipt,
   type DevelopmentCandidate,
@@ -50,6 +52,7 @@ export interface DockerConnection {
 export interface DevelopmentRunnerConfig extends DockerConnection {
   version: 1;
   profile: DevelopmentProfile;
+  profiles?: DevelopmentProfile[];
 }
 export interface DockerCommandOptions {
   signal?: AbortSignal;
@@ -75,6 +78,7 @@ export interface DevelopmentRunner {
     ready: boolean;
     reason: string;
     profile?: DevelopmentProfile;
+    profiles?: DevelopmentProfile[];
   }>;
   run(input: {
     runId: string;
@@ -82,6 +86,7 @@ export interface DevelopmentRunner {
     phase: "baseline" | "candidate";
     executionId: string;
     candidate?: DevelopmentCandidate;
+    profile?: DevelopmentProfile;
     signal?: AbortSignal;
   }): Promise<CheckReceipt>;
   cleanup(executionId: string): Promise<boolean>;
@@ -233,24 +238,52 @@ export function loadDevelopmentRunnerConfig(
   }
   const profile = developmentProfileSchema.parse(raw.profile);
   if (
-    profile.baseCommit !== DEVELOPMENT_BASE_COMMIT ||
-    sha256(developmentProfileFingerprintInput(profile)) !==
-      profile.profileHash ||
-    sha256(profile.files[0].text) !== profile.files[0].sha256
+    raw.profiles !== undefined &&
+    (!Array.isArray(raw.profiles) ||
+      raw.profiles.length < 1 ||
+      raw.profiles.length > 8)
   )
-    throw new Error("The pinned development profile could not be verified.");
+    throw new Error("A bounded profile registry is required.");
+  const profiles = (raw.profiles ?? [profile]).map((value) =>
+    developmentProfileSchema.parse(value),
+  );
+  if (
+    new Set(profiles.map((value) => value.profileHash)).size !==
+      profiles.length ||
+    !profiles.some((value) => equal(value, profile))
+  )
+    throw new Error(
+      "The default profile must match its retained registry entry.",
+    );
+  for (const value of profiles) {
+    if (
+      (value.id === "web-api-status-authority" &&
+        value.baseCommit !== DEVELOPMENT_BASE_COMMIT) ||
+      sha256(developmentProfileFingerprintInput(value)) !== value.profileHash ||
+      value.files.some((file) => sha256(file.text) !== file.sha256) ||
+      (value.id === "web-client-regressions" &&
+        sha256(developmentAcceptanceFingerprintInput(value)) !==
+          value.acceptanceHash)
+    )
+      throw new Error("The pinned development profile could not be verified.");
+  }
   return {
     version: 1,
     dockerBinary: raw.dockerBinary,
     dockerHost: raw.dockerHost,
     dockerConfig: raw.dockerConfig,
     profile,
+    ...(raw.profiles ? { profiles } : {}),
   };
 }
 
 /** Minimal regular-file ustar context. Candidate code is copied as bytes, never evaluated on the host. */
 export function developmentBuildContext(
-  files: ReadonlyArray<{ path: string; content: string }>,
+  files: ReadonlyArray<{
+    path: string;
+    content: string | Buffer;
+    mode?: number;
+  }>,
 ): Buffer {
   const chunks: Buffer[] = [];
   for (const file of files) {
@@ -261,7 +294,9 @@ export function developmentBuildContext(
       Buffer.byteLength(file.path) > 100
     )
       throw new Error("Unsafe build-context path.");
-    const content = Buffer.from(file.content, "utf8"),
+    const content = Buffer.isBuffer(file.content)
+        ? file.content
+        : Buffer.from(file.content, "utf8"),
       header = Buffer.alloc(512);
     header.write(file.path, 0, 100, "utf8");
     const octal = (value: number, offset: number, size: number) =>
@@ -271,7 +306,9 @@ export function developmentBuildContext(
         size,
         "ascii",
       );
-    octal(0o644, 100, 8);
+    if (file.mode !== undefined && file.mode !== 0o644 && file.mode !== 0o755)
+      throw new Error("Unsafe build-context mode.");
+    octal(file.mode ?? 0o644, 100, 8);
     octal(1000, 108, 8);
     octal(1000, 116, 8);
     octal(content.length, 124, 12);
@@ -294,12 +331,13 @@ export function developmentBuildContext(
 /** Strict top-level TAP records and summary; extra/duplicate/missing tests cannot pass. */
 export function parseDevelopmentTap(
   stdout: string,
+  names: readonly string[] = DEVELOPMENT_CHECK_NAMES,
 ): Array<{ name: string; passed: boolean }> | undefined {
   const lines = stdout.split(/\r?\n/);
   if (
     !lines.includes("TAP version 13") ||
     lines.filter((line) => /^1\.\./.test(line)).length !== 1 ||
-    !lines.includes(`1..${DEVELOPMENT_CHECK_NAMES.length}`)
+    !lines.includes(`1..${names.length}`)
   )
     return undefined;
   const results = lines.flatMap((line) => {
@@ -309,18 +347,17 @@ export function parseDevelopmentTap(
       : [];
   });
   if (
-    results.length !== DEVELOPMENT_CHECK_NAMES.length ||
+    results.length !== names.length ||
     results.some(
-      (result, i) =>
-        result.index !== i + 1 || result.name !== DEVELOPMENT_CHECK_NAMES[i],
+      (result, i) => result.index !== i + 1 || result.name !== names[i],
     )
   )
     return undefined;
   const passed = results.filter((result) => result.passed).length;
   for (const [key, value] of Object.entries({
-    tests: 6,
+    tests: names.length,
     pass: passed,
-    fail: 6 - passed,
+    fail: names.length - passed,
     cancelled: 0,
     skipped: 0,
     todo: 0,
@@ -364,7 +401,13 @@ function verifyBase(image: any, profile: DevelopmentProfile) {
       profile.lockfileHash ||
     image.Config?.Labels?.["io.vuzmi.development.base"] !==
       profile.baseCommit ||
-    image.Config?.Labels?.["io.vuzmi.development.policy"] !== profile.policyId
+    image.Config?.Labels?.["io.vuzmi.development.policy"] !==
+      profile.policyId ||
+    (profile.id === "web-client-regressions" &&
+      (image.Config?.Labels?.["io.vuzmi.development.tree"] !==
+        profile.sourceTree ||
+        image.Config?.Labels?.["io.vuzmi.development.archive"] !==
+          profile.sourceArchiveSha256))
   )
     throw new Error(
       "The sealed local checks image does not match the pinned profile.",
@@ -390,8 +433,8 @@ export function verifyDevelopmentContainer(
     container.Image !== input.image ||
     c?.Image !== input.image ||
     c?.User !== "1000:1000" ||
-    !equal(c?.Entrypoint, [DEVELOPMENT_COMMAND[0]]) ||
-    !equal(c?.Cmd, DEVELOPMENT_COMMAND.slice(1)) ||
+    !equal(c?.Entrypoint, [input.profile.command[0]]) ||
+    !equal(c?.Cmd, input.profile.command.slice(1)) ||
     c?.WorkingDir !== "/opt/vuzmi/repository" ||
     c?.Labels?.[DEVELOPMENT_LABEL] !== input.id ||
     c?.Labels?.["io.vuzmi.development.run"] !== input.runId ||
@@ -523,7 +566,9 @@ export function createDevelopmentRunner(
         const parsed = parseSingle(image);
         if (
           !owned(parsed.Config?.Labels) ||
-          parsed.Id === config.profile.baseImage
+          [config.profile, ...(config.profiles ?? [])].some(
+            (profile) => parsed.Id === profile.baseImage,
+          )
         )
           return false;
         const removed = await command(config, ["image", "rm", parsed.Id]);
@@ -552,30 +597,38 @@ export function createDevelopmentRunner(
             "Provision the private development checks profile with the documented setup command.",
         };
       }
-      try {
-        verifyBase(
-          parseSingle(
-            await command(config, [
-              "image",
-              "inspect",
-              config.profile.baseImage,
-            ]),
-          ),
-          config.profile,
-        );
-        return {
-          ready: true,
-          reason: "The pinned local isolated checks image is available.",
-          profile: config.profile,
-        };
-      } catch {
-        return {
-          ready: false,
-          reason:
-            "The dedicated Docker VM or pinned local checks image is unavailable; no host fallback is permitted.",
-          profile: config.profile,
-        };
-      }
+      const available = await Promise.all(
+        (config.profiles ?? [config.profile]).map(async (profile) => {
+          try {
+            verifyBase(
+              parseSingle(
+                await command(config, ["image", "inspect", profile.baseImage]),
+              ),
+              profile,
+            );
+            return profile;
+          } catch {
+            return undefined;
+          }
+        }),
+      );
+      const profiles = available.filter(
+        (profile): profile is DevelopmentProfile => profile !== undefined,
+      );
+      const defaultAvailable = profiles.some(
+        (profile) => profile.profileHash === config.profile.profileHash,
+      );
+      const ready = profiles.length > 0;
+      return {
+        ready,
+        reason: defaultAvailable
+          ? "The pinned local isolated checks image is available."
+          : ready
+            ? "The default profile is unavailable; other explicitly selectable retained profiles are available."
+            : "The dedicated Docker VM or retained checks images are unavailable; no host fallback is permitted.",
+        ...(defaultAvailable ? { profile: config.profile } : {}),
+        ...(config.profiles ? { profiles } : {}),
+      };
     },
     async cleanup(id) {
       try {
@@ -585,8 +638,20 @@ export function createDevelopmentRunner(
       }
     },
     async run(input) {
-      const config = loadDevelopmentRunnerConfig(configPath),
-        profile = config.profile;
+      const loaded = loadDevelopmentRunnerConfig(configPath);
+      const profile = input.profile
+        ? (loaded.profiles ?? [loaded.profile]).find(
+            (value) =>
+              value.profileHash === input.profile!.profileHash &&
+              equal(value, developmentProfileSchema.parse(input.profile)),
+          )
+        : loaded.profile;
+      if (!profile)
+        throw new DevelopmentRunnerError(
+          "PROFILE_UNAVAILABLE",
+          "The exact pinned profile is not retained by this runner.",
+        );
+      const config = { ...loaded, profile };
       if (
         !executionOwner(input.executionId) ||
         input.executionId !==
@@ -672,9 +737,12 @@ export function createDevelopmentRunner(
             throw new Error(
               "reserved image already exists or cannot be verified",
             );
+          const reusable = profile.id === "web-client-regressions";
           const dockerfile = [
             `FROM ${profile.baseImage}`,
-            `COPY --chown=1000:1000 candidate.ts /opt/vuzmi/repository/${DEVELOPMENT_PATH}`,
+            reusable
+              ? "COPY --chown=1000:1000 candidate/ /opt/vuzmi/repository/"
+              : `COPY --chown=1000:1000 candidate.ts /opt/vuzmi/repository/${DEVELOPMENT_PATH}`,
             `LABEL ${DEVELOPMENT_LABEL}="${input.executionId}" io.vuzmi.development.invocation="${invocation}" io.vuzmi.development.run="${input.runId}" io.vuzmi.development.attempt="${input.attemptId}" io.vuzmi.development.profile="${profile.profileHash}"`,
             "",
           ].join("\n");
@@ -687,10 +755,17 @@ export function createDevelopmentRunner(
               timeoutMs: 20000,
               input: developmentBuildContext([
                 { path: "Dockerfile", content: dockerfile },
-                {
-                  path: "candidate.ts",
-                  content: input.candidate!.files[0].content,
-                },
+                ...(!reusable
+                  ? [
+                      {
+                        path: "candidate.ts",
+                        content: input.candidate!.files[0].content,
+                      },
+                    ]
+                  : input.candidate!.files.map((file) => ({
+                      path: `candidate/${file.path}`,
+                      content: file.content,
+                    }))),
               ]),
             },
           );
@@ -735,6 +810,9 @@ export function createDevelopmentRunner(
               "io.vuzmi.development.lockfile",
               "io.vuzmi.development.base",
               "io.vuzmi.development.policy",
+              ...(reusable
+                ? ["io.vuzmi.development.tree", "io.vuzmi.development.archive"]
+                : []),
             ].some(
               (label) =>
                 child.Config?.Labels?.[label] !== base.Config?.Labels?.[label],
@@ -837,7 +915,8 @@ export function createDevelopmentRunner(
                 : "unavailable";
         } else {
           exitCode = final.State.ExitCode;
-          tests = parseDevelopmentTap(stdout) ?? [];
+          tests =
+            parseDevelopmentTap(stdout, developmentCheckNames(profile)) ?? [];
           status =
             input.signal?.aborted || result.aborted
               ? "cancelled"
@@ -848,7 +927,7 @@ export function createDevelopmentRunner(
                   : exitCode === 0 &&
                       result.exitCode === 0 &&
                       !truncated &&
-                      tests.length === 6 &&
+                      tests.length === developmentCheckNames(profile).length &&
                       tests.every((test) => test.passed)
                     ? "passed"
                     : "failed";

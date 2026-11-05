@@ -12,6 +12,7 @@ import {
   DomainError,
   DraftRevisionError,
   DevelopmentError,
+  DevelopmentApplicationError,
   reviseDraftSchema,
 } from "@vuzmi/core";
 import type {
@@ -223,7 +224,10 @@ export async function buildApp(
   });
 
   app.setErrorHandler((error, _request, reply) => {
-    if (error instanceof DevelopmentError)
+    if (
+      error instanceof DevelopmentError ||
+      error instanceof DevelopmentApplicationError
+    )
       return reply
         .code(error.statusCode)
         .send({ error: { code: error.code, message: error.message } });
@@ -368,19 +372,16 @@ export async function buildApp(
     },
   });
 
-  app.get(
-    "/v1/workspace",
-    async (): Promise<WorkspaceSnapshot> => ({
-      workspace: {
-        id: "local-workspace",
-        name: "Vuzmi Lab",
-        mode: repository ? "local" : "simulation",
-        storage: repository ? "postgres" : "local_file",
-        cloudExecution: false,
-      },
-      runs: await listRuns(),
-    }),
-  );
+  app.get("/v1/workspace", async (): Promise<WorkspaceSnapshot> => ({
+    workspace: {
+      id: "local-workspace",
+      name: "Vuzmi Lab",
+      mode: repository ? "local" : "simulation",
+      storage: repository ? "postgres" : "local_file",
+      cloudExecution: false,
+    },
+    runs: await listRuns(),
+  }));
 
   app.get("/v1/runtime", runtime);
   registerDevelopmentRoutes(app, {
@@ -392,6 +393,15 @@ export async function buildApp(
           "Development workflows require PostgreSQL and an isolated worker.",
         );
       return repository.development;
+    },
+    applications: () => {
+      if (!repository?.applications)
+        throw new HttpError(
+          503,
+          "APPLICATION_UNAVAILABLE",
+          "Local branch applications require PostgreSQL and a trusted worker.",
+        );
+      return repository.applications;
     },
     owner: (request) => owners.get(request),
     models: () => discoverModels({ baseUrl: options.ollamaBaseUrl }),

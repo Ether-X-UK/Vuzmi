@@ -165,6 +165,7 @@ export async function restoreDatabase({
             "vuzmi-generate-release",
             "vuzmi-index-source",
             "vuzmi-development-patch",
+            "vuzmi-development-application",
           ],
         ],
       );
@@ -184,6 +185,59 @@ export async function restoreDatabase({
         await client.query(
           `UPDATE ${runtime}.development_attempts SET state='closed' WHERE state IN ('active','recovering')`,
         );
+      const applications = await client.query(
+        "SELECT to_regclass($1) AS operations,to_regclass($2) AS runtime",
+        [
+          `${manifest.runtimeSchema}.development_applications`,
+          `${manifest.runtimeSchema}.development_application_runtime`,
+        ],
+      );
+      if (applications.rows[0].runtime)
+        await client.query(
+          `DELETE FROM ${runtime}.development_application_runtime`,
+        );
+      if (applications.rows[0].operations) {
+        const unfinished = await client.query(
+          `SELECT id,aggregate FROM ${runtime}.development_applications WHERE status IN ('queued','running','unconfirmed') FOR UPDATE`,
+        );
+        for (const row of unfinished.rows) {
+          const old = row.aggregate,
+            now = new Date().toISOString();
+          const event = {
+            sequence: old.events.length + 1,
+            type: "application.restore_quarantined",
+            occurredAt: now,
+            message:
+              "Database restore quarantined this unfinished local application. No Git effects are restarted on this host.",
+          };
+          const next = {
+            ...old,
+            status: "unconfirmed",
+            revision: old.revision + 1,
+            updatedAt: now,
+            events: [...old.events, event],
+            error: {
+              code: "APPLICATION_RESTORE_QUARANTINED",
+              message:
+                "Review the restored authorization and original repository independently. This operation cannot replay automatically.",
+            },
+          };
+          await client.query(
+            `UPDATE ${runtime}.development_applications SET status=$3,revision=$4,aggregate=$5::jsonb,worker_id=NULL,attempt_id=NULL,seen_at=NULL WHERE workspace_id=$1 AND id=$2`,
+            [
+              old.workspaceId,
+              old.id,
+              next.status,
+              next.revision,
+              JSON.stringify(next),
+            ],
+          );
+          await client.query(
+            `INSERT INTO ${runtime}.development_application_events(workspace_id,application_id,sequence,event) VALUES($1,$2,$3,$4::jsonb)`,
+            [old.workspaceId, old.id, event.sequence, JSON.stringify(event)],
+          );
+        }
+      }
       await client.query("COMMIT");
     } catch {
       await client.query("ROLLBACK").catch(() => undefined);

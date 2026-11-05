@@ -18,6 +18,17 @@ import {
 // provision first, then node --import tsx --test this file. Missing setup fails.
 // No generated program executes on the host; every candidate is only COPY data
 // until the production runner has inspected its effective container policy.
+function legacyProfile() {
+  const config = loadDevelopmentRunnerConfig();
+  const profile = (config.profiles ?? [config.profile]).find(
+    (value) => value.id === "web-api-status-authority",
+  );
+  assert.ok(
+    profile,
+    "Provision the retained legacy profile before running this gate.",
+  );
+  return profile;
+}
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const fresh = (phase: "baseline" | "candidate" = "candidate") => {
   const runId = randomUUID(),
@@ -61,9 +72,13 @@ test("real offline runner reproduces the pinned bug then passes the correction w
   const runner = createDevelopmentRunner();
   const ready = await runner.readiness();
   assert.equal(ready.ready, true, ready.reason);
-  const profile = ready.profile!;
+  const profile = legacyProfile();
   const baselineInput = fresh("baseline");
-  const baseline = await runner.run({ ...baselineInput, phase: "baseline" });
+  const baseline = await runner.run({
+    ...baselineInput,
+    profile,
+    phase: "baseline",
+  });
   assert.equal(
     developmentBaselineReproduced(baseline),
     true,
@@ -102,6 +117,7 @@ console.log('VUZMI_POLICY_PROBE: nonroot,readonly,nonetwork,nosocket,capdrop,nnp
   const input = fresh();
   const check = await runner.run({
     ...input,
+    profile,
     phase: "candidate",
     candidate: corrected(profile, probe),
   });
@@ -116,9 +132,10 @@ console.log('VUZMI_POLICY_PROBE: nonroot,readonly,nonetwork,nosocket,capdrop,nnp
 
 test("real candidate cannot self-exit early or flood output into passing evidence", async () => {
   const runner = createDevelopmentRunner();
-  const profile = loadDevelopmentRunnerConfig().profile;
+  const profile = legacyProfile();
   const early = await runner.run({
     ...fresh(),
+    profile,
     phase: "candidate",
     candidate: corrected(profile, "\nprocess.exit(0);\n"),
   });
@@ -126,6 +143,7 @@ test("real candidate cannot self-exit early or flood output into passing evidenc
   assert.equal(early.tests.length, 0);
   const flooded = await runner.run({
     ...fresh(),
+    profile,
     phase: "candidate",
     candidate: corrected(profile, "\nconsole.log('x'.repeat(200000));\n"),
   });
@@ -136,7 +154,7 @@ test("real candidate cannot self-exit early or flood output into passing evidenc
 
 test("candidate stdout cannot impersonate the six sealed acceptance results", async () => {
   const runner = createDevelopmentRunner(),
-    profile = loadDevelopmentRunnerConfig().profile;
+    profile = legacyProfile();
   const fake = [
     "TAP version 13",
     ...DEVELOPMENT_CHECK_NAMES.map((name, i) => `ok ${i + 1} - ${name}`),
@@ -150,6 +168,7 @@ test("candidate stdout cannot impersonate the six sealed acceptance results", as
   ].join("\n");
   const check = await runner.run({
     ...fresh(),
+    profile,
     phase: "candidate",
     candidate: corrected(
       profile,
@@ -169,11 +188,12 @@ test("real cancellation kills the exact owned running container and cleanup is r
     return executeDockerCommand(connection, args, options);
   };
   const runner = createDevelopmentRunner({ execute });
-  const profile = loadDevelopmentRunnerConfig().profile,
+  const profile = legacyProfile(),
     input = fresh();
   try {
     const check = await runner.run({
       ...input,
+      profile,
       phase: "candidate",
       candidate: corrected(profile, "\nsetInterval(() => {}, 1000);\n"),
       signal: controller.signal,
@@ -188,9 +208,10 @@ test("real cancellation kills the exact owned running container and cleanup is r
 
 test("real memory exhaustion records OOM rather than a successful check", async () => {
   const runner = createDevelopmentRunner(),
-    profile = loadDevelopmentRunnerConfig().profile;
+    profile = legacyProfile();
   const check = await runner.run({
     ...fresh(),
+    profile,
     phase: "candidate",
     candidate: corrected(
       profile,
@@ -203,12 +224,74 @@ test("real memory exhaustion records OOM rather than a successful check", async 
 
 test("real wall-clock deadline kills unfinished checks and never reports pass", async () => {
   const runner = createDevelopmentRunner(),
-    profile = loadDevelopmentRunnerConfig().profile;
+    profile = legacyProfile();
   const check = await runner.run({
     ...fresh(),
+    profile,
     phase: "candidate",
     candidate: corrected(profile, "\nsetInterval(() => {}, 1000);\n"),
   });
   assert.equal(check.status, "timed_out", JSON.stringify(check));
   assert.ok(check.durationMs >= 30000 && check.durationMs < 60000);
+});
+
+test("reusable catalog retains legacy execution and passes nineteen regressions for baseline and multi-file candidate", async () => {
+  const runner = createDevelopmentRunner(),
+    config = loadDevelopmentRunnerConfig();
+  const ready = await runner.readiness();
+  assert.equal(ready.ready, true, ready.reason);
+  assert.equal(
+    config.profile.id,
+    "web-client-regressions",
+    "Provision the reusable current-commit profile after legacy setup.",
+  );
+  const profile = ready.profiles?.find(
+    (value) => value.profileHash === config.profile.profileHash,
+  );
+  assert.ok(profile);
+  assert.ok(
+    ready.profiles?.some((value) => value.id === "web-api-status-authority"),
+  );
+  const baseline = await runner.run({
+    ...fresh("baseline"),
+    phase: "baseline",
+    profile,
+  });
+  assert.equal(baseline.status, "passed", JSON.stringify(baseline));
+  assert.equal(baseline.tests.length, 19);
+  const candidate = validateDevelopmentCandidate(
+    {
+      summary:
+        "Synthetic multi-file regression preservation probe; no task fulfillment claim.",
+      files: profile.files.slice(0, 2).map((file) => ({
+        path: file.path,
+        beforeSha256: file.sha256,
+        content:
+          file.text + "\n// Synthetic isolated multi-file profile probe.\n",
+      })),
+    },
+    profile,
+    hash,
+  );
+  const checked = await runner.run({
+    ...fresh(),
+    phase: "candidate",
+    profile,
+    candidate,
+  });
+  assert.equal(checked.status, "passed", JSON.stringify(checked));
+  assert.equal(checked.tests.length, 19);
+  assert.equal(checked.profileHash, profile.profileHash);
+  assert.notEqual(checked.imageId, profile.baseImage);
+  const old = legacyProfile();
+  const legacy = await runner.run({
+    ...fresh("baseline"),
+    phase: "baseline",
+    profile: old,
+  });
+  assert.equal(
+    developmentBaselineReproduced(legacy),
+    true,
+    JSON.stringify(legacy),
+  );
 });

@@ -1,6 +1,6 @@
 # Local development checks runner
 
-This is the bounded `web-api-status-authority@1` development profile described in architecture §25. It targets Vuzmi's owned public repository at commit `a7d088e4954f848da392eed91684dfb445d5ce45`. Only `apps/web/src/api.ts` may change. It produces observed check evidence for an exact local patch package; the real checkout stays unchanged. Checks do not establish that arbitrary generated code is safe.
+The original bounded `web-api-status-authority@1` profile described in architecture §25 targets Vuzmi's owned public repository at commit `a7d088e4954f848da392eed91684dfb445d5ce45`. Only `apps/web/src/api.ts` may change in that historical profile. The reusable profile below follows architecture §26. Both produce observed check evidence for an exact local patch package; the real checkout stays unchanged. Checks do not establish that arbitrary generated code is safe or an arbitrary task was fulfilled.
 
 The API has no Docker connection. A separate trusted worker loads `.data/dev/development-runner.json`, publishes readiness and owns execution. Missing configuration, image, daemon, policy or complete evidence blocks this workflow. There is no host execution or model-provider fallback.
 
@@ -29,7 +29,7 @@ From the repository root, with Node22 and the dedicated VM already running:
 node --import tsx scripts/setup-development.mjs
 ```
 
-Provisioning reads reviewed Git objects at the full pinned commit, never the live working tree, environment files, operator data or model output. The commit must exist locally; shallow CI checkouts must fetch it. It exports regular tracked source, rejects symlinks/submodules/private paths, verifies the API source and lockfile, and adds the sealed acceptance harness. Public official Node22 slim is pulled anonymously for the native Linux platform and resolved to a repository digest. The trusted provisioning build installs the pinned lockfile with `npm ci --ignore-scripts --no-audit --no-fund --workspace @vuzmi/core --include-workspace-root`. Dependency downloads occur only during this explicit setup stage. It does not run repository lifecycle scripts, make paid requests or inherit registry credentials.
+Provisioning reads reviewed Git objects at the full pinned commit, never the live working tree, environment files, operator data or model output. The commit must exist locally; shallow CI checkouts must fetch it. It exports exact regular Git blobs and executable modes with replacement objects disabled, so archive export-ignore/export-subst attributes cannot omit or rewrite source. Git transports and lazy fetching are disabled; partial/promisor repository configuration is rejected before reading objects. It rejects symlinks/submodules/private paths, verifies source and lockfile bytes, and adds the separately sealed acceptance harness. Build metadata stays outside the exported source directory. Public official Node22 slim is pulled anonymously for the native Linux platform and resolved to a repository digest. The trusted provisioning build installs the pinned lockfile with `npm ci --ignore-scripts --no-audit --no-fund --workspace @vuzmi/core --include-workspace-root`. Dependency downloads occur only during this explicit setup stage. It does not run repository lifecycle scripts, make paid requests or inherit registry credentials.
 
 The sealed image contains Linux dependencies, the pinned baseline source and the separate harness at `/opt/vuzmi/checks/web-api-status-authority.test.ts`. Do not copy macOS `node_modules`. Setup records the resolved sealed image ID, platform, source/lockfile/harness hashes, fixed command and canonical profile hash. Directories are private owned directories; configuration and the separate empty Docker client config are 0600. Bounded diagnostics describe only public-source provisioning failures. Configuration activates only after successful image creation.
 
@@ -68,3 +68,29 @@ node --import tsx --test packages/runtime/test/development-runner.integration.ts
 It exercises the real pinned baseline and corrected synthetic candidate, observes kernel UID/capability/no-new-privileges/network/cgroup controls, probes read-only/noexec and absent host resources, and checks early exit, output flooding, cancellation, OOM and wall-clock timeout. Synthetic QA patches never modify the checkout or use operator application data. The integration filename is intentionally outside the ordinary `*.test.ts` fixture/PG glob; run this gate explicitly in local release and supported Linux CI checks. Current pass/failure evidence belongs in STATUS and release records after the command completes.
 
 A shared dedicated VM and these controls target the owned-repository private alpha. Customer code, private repository credentials, dependency changes, arbitrary commands, writable host mounts, multiple tenants, PR creation, merge and deployment require later explicit capabilities and stronger isolation gates. [Docker run controls](https://docs.docker.com/reference/cli/docker/container/run/), [build contexts](https://docs.docker.com/build/concepts/context/)
+
+## Reusable current-source profile
+
+Provision `web-client-regressions@1` from an explicitly selected full 40-character commit that equals the registered checkout's clean HEAD:
+
+```sh
+node --import tsx scripts/setup-development.mjs --profile web-client-regressions --commit <full-40-character-commit>
+```
+
+Tracked changes and nonignored untracked files reject preparation. Ignored private/runtime files remain excluded. This does not accept arbitrary repositories, filenames, commands or dependencies from the API or model. The fixed editable catalog contains `apps/web/src/api.ts`, `apps/web/src/draftSession.ts` and `apps/web/src/proposalReview.ts`; a candidate may replace a nonempty subset. Every before hash, returned path, final file and combined candidate fingerprint must verify. Candidate code remains data while a generated COPY-only overlay adds precisely those files as one layer over the sealed base.
+
+The profile binds the full commit/tree, deterministic exact source-archive SHA-256, all three source texts/hashes, lockfile, platform, resolved sealed image ID, 19 exact check names, three committed fixture hashes and a separately hashed trusted wrapper. Its acceptance hash uses the shared canonical fixture/name/command/wrapper manifest. Image labels and base-layer ancestry must match. The wrapper runs the original API-session-expiry, draft-session and proposal-review fixture files as separate offline Node test processes, preserving their original imports and hook/global isolation. It validates complete child results before reporting the corresponding 19 acceptance results. Candidate-printed TAP remains captured diagnostics and cannot supply those results.
+
+Both reusable baseline and candidate must pass all 19 named regressions. The legacy known-red baseline requirement stays unchanged. These checks establish preservation of the named behavior; they do not claim full repository validation or satisfaction of an unrelated brief. No task-specific test editing or automatic test generation is authorized by this profile. The fixed outer command is:
+
+```text
+/usr/local/bin/node --import tsx --test /opt/vuzmi/checks/web-client-regressions.test.ts
+```
+
+Before activation, provisioning runs a real fresh offline baseline; failure preserves the prior default configuration. Private immutable registry entries live at `.data/dev/development-profiles/<profileHash>/profile.json`, with `source.tar` and provisioning baseline receipts. The private runner configuration retains up to8 profiles and a default. Sealed images also receive a profile-hash tag. Provisioning never prunes old configurations or images; a full catalog fails visibly until retention is reviewed explicitly. Retain these private files with operational backups when repeatable offline execution is required. A database restore alone preserves historical package evidence but cannot reconstruct a missing image; restored work stays quarantined until exact prerequisites are available.
+
+Readiness advertises verified available catalog entries without replacing an unavailable configured default. New admission captures an exact displayed profile hash. Production worker calls pass the run's complete pinned profile; execution must find an exact retained match, even after the default changes. Missing/mismatched entries or images fail closed. Historical packages and their approval bytes remain unchanged; profile switching never retargets an existing run.
+
+The actual runner gate now requires legacy provisioning followed by reusable provisioning. It verifies all prior isolation/failure cases, a green 19-test baseline, a synthetic two-file candidate with 19 passing regressions, and continued execution of the retained historical profile. A synthetic comment-only QA candidate is expressly a confinement/regression probe. It is not evidence of real model task fulfillment. Actual reusable-profile results are recorded only after the clean-commit provisioning and gate complete.
+
+Saving an approved package still changes no checkout or Git ref. The separately authorized local branch application described in architecture §26 has its own persisted plan, authority and receipt; this runner does not perform that effect.

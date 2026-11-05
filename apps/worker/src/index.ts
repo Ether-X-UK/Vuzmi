@@ -9,6 +9,8 @@ import {
   startWorker,
   startDevelopmentWorker,
   createDevelopmentRunner,
+  createDevelopmentGitConnector,
+  startDevelopmentApplicationWorker,
 } from "@vuzmi/runtime";
 import { loadServerConfig } from "@vuzmi/runtime/config";
 
@@ -21,8 +23,9 @@ if (!config.databaseUrl)
 let repository: PostgresRunRepository | undefined;
 let worker: Awaited<ReturnType<typeof startWorker>> | undefined;
 let developmentWorker:
-  | Awaited<ReturnType<typeof startDevelopmentWorker>>
-  | undefined;
+  Awaited<ReturnType<typeof startDevelopmentWorker>> | undefined;
+let applicationWorker:
+  Awaited<ReturnType<typeof startDevelopmentApplicationWorker>> | undefined;
 try {
   repository = await PostgresRunRepository.connect({
     connectionString: config.databaseUrl,
@@ -61,11 +64,23 @@ try {
         "A bounded development operation failed. Inspect its persisted attempt and isolated runner readiness.",
       ),
   });
+  applicationWorker = await startDevelopmentApplicationWorker({
+    repository,
+    connector: createDevelopmentGitConnector(),
+    onError: () =>
+      console.error(
+        "A local branch operation needs inspection. Consult its retained application record.",
+      ),
+  });
   let closing = false;
   const close = (): void => {
     if (closing) return;
     closing = true;
-    void Promise.all([worker!.stop(), developmentWorker!.stop()])
+    void Promise.all([
+      worker!.stop(),
+      developmentWorker!.stop(),
+      applicationWorker!.stop(),
+    ])
       .then(() => repository!.close())
       .then(
         () => process.exit(0),
@@ -78,6 +93,7 @@ try {
     "Vuzmi local Ollama worker is ready. Cloud execution is disabled.",
   );
 } catch (error) {
+  await applicationWorker?.stop().catch(() => undefined);
   await developmentWorker?.stop().catch(() => undefined);
   await worker?.stop().catch(() => undefined);
   await repository?.close().catch(() => undefined);

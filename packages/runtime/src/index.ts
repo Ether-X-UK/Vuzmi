@@ -43,3 +43,14 @@ export type {
   DevelopmentGenerator,
 } from "./development-worker.js";
 export { createDevelopmentRunner } from "./development-runner.js";
+
+export {
+  DevelopmentApplicationRepository,
+  DEVELOPMENT_APPLICATION_QUEUE,
+} from "./development-application.js";
+export { createDevelopmentGitConnector } from "./development-git.js";
+export type { DevelopmentGitAdapter } from "./development-git.js";
+export {
+  processDevelopmentApplicationJob,
+  startDevelopmentApplicationWorker,
+} from "./development-application-worker.js";

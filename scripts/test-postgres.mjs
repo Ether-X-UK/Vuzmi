@@ -40,7 +40,7 @@ try {
     throw new Error("No PostgreSQL integration tests were found.");
   const child = spawn(
     process.execPath,
-    ["--import", "tsx", "--test", ...tests],
+    ["--import", "tsx", "--test", "--test-concurrency=1", ...tests],
     {
       cwd: root,
       stdio: "inherit",
