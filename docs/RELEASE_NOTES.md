@@ -11,12 +11,13 @@ Vuzmi now turns an owned product brief and selected knowledge into a locally gen
 - Single-owner authentication, safe browser Markdown/citations, exact approval/rejection, local outbox and deterministic downloads.
 - Web draft corrections before approval, with owner/reason attribution, retained original/prior text, stale approval protection, exact retry handling, conflict preservation and memory-only recovery after session expiry. Fixed provenance and retained references are reconstructed by trusted code; edits do not trigger another model call.
 - Locally built iOS Simulator companion with secure sessions, runs, exact documents and approvals.
+- Changed proposals require deliberate exact-document review and version acknowledgment in web/iOS. Native polling, protected session expiry and late-response handling recover without silently retargeting decisions.
 - Built web/API self-host command on loopback, health endpoints, private backup/empty-target recovery and reviewed source packaging.
 - Disabled OpenAI/Claude text adapter contracts tested through fixtures; no live cloud-provider call.
 
 ## Verification
 
-The current checks pass 111 unit/API/source/startup/native-transport/web-session tests and 53 real PostgreSQL/auth/knowledge/outbox/revision tests, strict root/mobile TypeScript, web production build and native bundle export. The baseline signed Release Simulator compilation remains valid compilation evidence; no fresh Xcode build was run for the web/shared revision increment. A real local embedding/generation browser mission produced a downloaded package matching its approved database content and evidence. Separate synthetic browser checks verified human revision, expired-session recovery, concurrent conflict and exact approved download; a native dump/restore drill also preserved revision history and package bytes between two disposable databases. See [STATUS.md](STATUS.md) for exact scope and limitations.
+The current client checks pass 134 unit/API/source/startup/native-transport/web-session tests, strict root/mobile TypeScript, web production build and an 801-module iOS export. A fresh ad-hoc-signed Xcode Release Simulator compilation passes for the client recovery increment; interaction checks of its new controls remain pending. The existing 53 real PostgreSQL/auth/knowledge/outbox/revision tests and recovery drill passed on the previous backend baseline, which this increment does not change. A real local embedding/generation browser mission produced a downloaded package matching its approved database content and evidence. Separate synthetic browser checks verified human revision, expired-session recovery, concurrent conflict and exact approved download; a native dump/restore drill also preserved revision history and package bytes between two disposable databases. See [STATUS.md](STATUS.md) for exact scope and limitations.
 
 ## Evaluation boundary
 

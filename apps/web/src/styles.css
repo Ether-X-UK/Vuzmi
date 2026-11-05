@@ -4858,6 +4858,62 @@ code {
   font-size: 12px;
   line-height: 1.8;
 }
+
+.proposal-change-notice {
+  margin: 0 0 22px;
+  padding: 22px;
+  border: 1px solid #817047;
+  border-radius: 9px;
+  background: #25271c;
+}
+.proposal-change-notice h2 {
+  margin: 9px 0 12px;
+  color: #e7dfc3;
+  font-size: 22px;
+  font-weight: 500;
+}
+.proposal-change-notice p,
+.proposal-document-acknowledgment p {
+  color: #c4cfb9;
+  font-size: 14px;
+  line-height: 1.8;
+  margin: 12px 0 18px;
+}
+.proposal-change-notice:focus-visible {
+  outline: 2px solid #49dbc0;
+  outline-offset: 3px;
+}
+.proposal-version-record {
+  display: grid;
+  gap: 7px;
+  padding: 15px 22px;
+  border-bottom: 1px solid #2b4244;
+  color: #a7c3b5;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.proposal-version-record > span:nth-child(2) {
+  color: #90a99e;
+}
+.proposal-version-record code,
+.proposal-document-acknowledgment code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #b5d5c4;
+  font: 12px/1.8 var(--mono);
+}
+.proposal-document-acknowledgment {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #49624d;
+}
+.proposal-document-acknowledgment > strong {
+  display: block;
+  margin-bottom: 12px;
+  color: #d4e4cc;
+  font-size: 15px;
+  font-weight: 500;
+}
 .draft-validation {
   color: #efb5a6;
 }

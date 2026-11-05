@@ -53,6 +53,16 @@ import {
   retainedDraft,
   type DraftSession,
 } from "./draftSession";
+import {
+  acknowledgeProposal,
+  captureReviewedDecision,
+  createProposalReview,
+  openUpdatedProposal,
+  proposalVersion,
+  receiveProposalRun,
+  requireProposalReview,
+  sameProposalVersion,
+} from "./proposalReview";
 
 type Route = {
   page: "command" | "runs" | "approvals" | "outbox" | "roadmap";
@@ -1226,23 +1236,51 @@ function RunDetail({
     return held?.initialRun.id === run.id ? held : null;
   });
   const [revisionSaved, setRevisionSaved] = useState<string | null>(null);
-  const proposal = run.proposal;
+  const [reviewState, setReviewState] = useState(() =>
+    createProposalReview(editing?.initialRun ?? run),
+  );
+  // Derive immediately as well as persisting in the effect: no stale render may
+  // enable a decision before an incoming version or run switch is observed.
+  const review = receiveProposalRun(reviewState, run);
+  const reviewRef = useRef(review);
+  const latestRunRef = useRef(run);
+  const decisionInFlight = useRef(false);
+  reviewRef.current = review;
+  latestRunRef.current = run;
+  useEffect(() => {
+    setReviewState((current) => receiveProposalRun(current, run));
+  }, [run]);
+  const documentRun = review.displayed;
+  const shownVersion = proposalVersion(documentRun);
+  const reviewNeeded =
+    review.required && Boolean(proposalVersion(review.latest));
+  const decisionReady = Boolean(
+    captureReviewedDecision(review, shownVersion, "approve"),
+  );
+  const openedDocument = sameProposalVersion(review.opened, shownVersion);
+  const currentDocument = sameProposalVersion(
+    shownVersion,
+    proposalVersion(review.latest),
+  );
+  const proposal = documentRun.proposal;
+  const latestProposal = run.proposal;
   const revisions = run.draftRevisions ?? [];
   const humanRevised = revisions.length > 0;
+  const documentHumanRevised = Boolean(documentRun.draftRevisions?.length);
   const heldDraft = retainedDraft(ownerId);
   const editableBody =
     run.mode === "ollama" &&
     run.status === "waiting_approval" &&
     run.route.executed &&
-    proposal &&
+    latestProposal &&
     revisions.length < 10
       ? extractDraftBody(
-          proposal.content,
+          latestProposal.content,
           run.evidence,
           humanRevised ? "human" : "model",
         )
       : undefined;
-  const documentContent = run.artifact?.content ?? proposal?.content;
+  const documentContent = documentRun.artifact?.content ?? proposal?.content;
   const unresolvedCitations = [
     ...new Set(
       [...(documentContent ?? "").matchAll(/\[([SM][1-9][0-9]*)\]/g)].map(
@@ -1251,7 +1289,7 @@ function RunDetail({
     ),
   ].filter(
     (citation) =>
-      !run.evidence?.items.some((item) => item.citation === citation),
+      !documentRun.evidence?.items.some((item) => item.citation === citation),
   );
   useEffect(() => {
     setError(null);
@@ -1260,28 +1298,64 @@ function RunDetail({
     setEditing(held?.initialRun.id === run.id ? held : null);
     setRevisionSaved(null);
   }, [run.id]);
+  const focusDocument = () => {
+    window.requestAnimationFrame(() => {
+      const preview = document.getElementById("artifact-preview");
+      preview?.focus({ preventScroll: true });
+      preview?.scrollIntoView({ block: "start" });
+    });
+  };
+  const openReplacement = () => {
+    if (editing || deciding) return;
+    setReviewState((current) =>
+      openUpdatedProposal(
+        receiveProposalRun(current, latestRunRef.current),
+        run.id,
+      ),
+    );
+    focusDocument();
+  };
+  const acknowledgeShownDocument = () => {
+    if (!shownVersion || editing || deciding) return;
+    setReviewState((current) =>
+      acknowledgeProposal(
+        receiveProposalRun(current, latestRunRef.current),
+        shownVersion,
+      ),
+    );
+  };
   const decide = async (decision: "approve" | "reject") => {
-    if (!proposal || run.status !== "waiting_approval" || editing) return;
+    if (!connected || editing || decisionInFlight.current) return;
+    const captured = captureReviewedDecision(
+      receiveProposalRun(reviewRef.current, latestRunRef.current),
+      shownVersion,
+      decision,
+    );
+    if (!captured) return;
+    decisionInFlight.current = true;
     setDeciding(decision);
     setError(null);
     try {
-      onUpdate(
-        await decideRun(run.id, {
-          decision,
-          fingerprint: proposal.fingerprint,
-          revision: run.revision,
-        }),
-      );
+      onUpdate(await decideRun(captured.runId, captured.input));
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (latestRunRef.current.id === captured.runId)
+        setError(errorMessage(caught));
       if (caught instanceof ApiError && caught.status === 409) {
+        if (latestRunRef.current.id === captured.runId) {
+          setReviewState((current) =>
+            requireProposalReview(
+              receiveProposalRun(current, latestRunRef.current),
+            ),
+          );
+        }
         try {
-          onUpdate(await getRun(run.id));
+          onUpdate(await getRun(captured.runId));
         } catch {
           /* The visible decision error remains available. */
         }
       }
     } finally {
+      decisionInFlight.current = false;
       setDeciding(null);
     }
   };
@@ -1345,10 +1419,10 @@ function RunDetail({
       </div>
       <div className="run-detail-grid">
         <div className="run-main-column">
-          {(run.knowledge || run.evidence) && (
+          {(documentRun.knowledge || documentRun.evidence) && (
             <EvidencePanel
-              evidence={run.evidence}
-              requested={Boolean(run.knowledge)}
+              evidence={documentRun.evidence}
+              requested={Boolean(documentRun.knowledge)}
               prefix={run.id}
               unresolved={unresolvedCitations}
             />
@@ -1367,6 +1441,44 @@ function RunDetail({
               {revisionSaved}
             </p>
           )}
+          {reviewNeeded && (
+            <section
+              id="proposal-change-notice"
+              className="proposal-change-notice"
+              tabIndex={-1}
+              aria-labelledby="proposal-change-title"
+              role="status"
+            >
+              <div className="section-kicker">REVIEW BOUNDARY CHANGED</div>
+              <h2 id="proposal-change-title">Proposal changed</h2>
+              <p>
+                Displaying revision {documentRun.revision}. The latest saved
+                proposal is revision {review.latest.revision}. Approval and
+                rejection stay unavailable until you open and acknowledge that
+                exact version.
+              </p>
+              {openedDocument && currentDocument && (
+                <p>
+                  The updated document is open below. Read it, then acknowledge
+                  its revision from the document section.
+                </p>
+              )}
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={Boolean(editing) || Boolean(deciding)}
+                onClick={openReplacement}
+              >
+                Review updated document
+              </button>
+              {editing && (
+                <p>
+                  Your editing session remains intact. Save or explicitly
+                  discard it before opening the replacement document.
+                </p>
+              )}
+            </section>
+          )}
           {editing ? (
             <Suspense
               fallback={<p role="status">Opening the local draft editor…</p>}
@@ -1378,15 +1490,20 @@ function RunDetail({
                 connected={connected}
                 onObserved={onUpdate}
                 onSaved={(saved) => {
+                  setReviewState((current) =>
+                    requireProposalReview(receiveProposalRun(current, saved)),
+                  );
                   setEditing(null);
                   onUpdate(saved);
                   setRevisionSaved(
                     `Human revision saved at run revision ${saved.revision}. Review the exact saved document before approving.`,
                   );
                   window.requestAnimationFrame(() => {
-                    const preview = document.getElementById("artifact-preview");
-                    preview?.focus({ preventScroll: true });
-                    preview?.scrollIntoView({ block: "start" });
+                    const notice = document.getElementById(
+                      "proposal-change-notice",
+                    );
+                    notice?.focus({ preventScroll: true });
+                    notice?.scrollIntoView({ block: "start" });
                   });
                 }}
                 onClose={() => {
@@ -1407,7 +1524,7 @@ function RunDetail({
                         : "Artifact for review"}
                   </span>
                   <span className="revision-label">
-                    REV {run.decision?.revision ?? run.revision}
+                    REV {documentRun.decision?.revision ?? documentRun.revision}
                   </span>
                 </div>
                 <div>
@@ -1437,6 +1554,13 @@ function RunDetail({
                   </button>
                 </div>
               </div>
+              {proposal && (
+                <div className="proposal-version-record">
+                  <span>Displayed run revision {documentRun.revision}</span>
+                  <span>Proposal fingerprint</span>
+                  <code>{proposal.fingerprint}</code>
+                </div>
+              )}
               {copyState && (
                 <p className="copy-feedback" role="status">
                   {copyState}
@@ -1446,10 +1570,10 @@ function RunDetail({
                 <div className="provider-output-notice">
                   <Icon name="alert" size={17} />
                   <p>
-                    {humanRevised
+                    {documentHumanRevised
                       ? "Human-revised draft. Review every factual claim. The original model output is retained in revision history."
                       : "Unverified local model output. Review every factual claim."}
-                    {run.evidence?.status === "matched"
+                    {documentRun.evidence?.status === "matched"
                       ? " Recorded evidence was retrieved; citations still require your review."
                       : " No retrieval was used."}{" "}
                     No repository inspection or tools were run.
@@ -1466,9 +1590,44 @@ function RunDetail({
                 >
                   <ArtifactDocument
                     content={documentContent}
-                    evidence={run.evidence}
+                    evidence={documentRun.evidence}
                     prefix={run.id}
                   />
+                  {openedDocument && shownVersion && (
+                    <div className="proposal-document-acknowledgment">
+                      <strong>
+                        Exact document · revision {shownVersion.revision}
+                      </strong>
+                      <code>{shownVersion.fingerprint}</code>
+                      {reviewNeeded ? (
+                        <>
+                          <p>
+                            {currentDocument
+                              ? "Acknowledge this displayed version after reviewing it. Approval or rejection remains a separate decision."
+                              : "A newer proposal arrived while this document was open. Open the updated document before acknowledging it."}
+                          </p>
+                          <button
+                            type="button"
+                            className="button button-secondary"
+                            disabled={
+                              !currentDocument ||
+                              Boolean(editing) ||
+                              Boolean(deciding)
+                            }
+                            onClick={acknowledgeShownDocument}
+                          >
+                            I reviewed revision {shownVersion.revision}
+                          </button>
+                        </>
+                      ) : (
+                        <p role="status">
+                          Revision {shownVersion.revision} acknowledged for
+                          review. No approval or rejection has been recorded by
+                          this acknowledgment.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </Suspense>
               </div>
               <div className="artifact-bottom">
@@ -1477,7 +1636,7 @@ function RunDetail({
                   ? `Saved ${dateTime(run.artifact.savedAt)}`
                   : run.mode === "simulation"
                     ? "Deterministic local template · No model call"
-                    : humanRevised
+                    : documentHumanRevised
                       ? "Human-revised draft · Awaiting review"
                       : "Local Ollama draft · Awaiting review"}
                 <span>MARKDOWN</span>
@@ -1708,20 +1867,20 @@ function RunDetail({
                   <>
                     <button
                       className="button button-secondary"
-                      onClick={() => {
-                        const preview =
-                          document.getElementById("artifact-preview");
-                        preview?.focus({ preventScroll: true });
-                        preview?.scrollIntoView({ block: "start" });
-                      }}
+                      onClick={reviewNeeded ? openReplacement : focusDocument}
                     >
                       <Icon name="knowledge" size={17} />
-                      Read exact document
+                      {reviewNeeded
+                        ? "Review updated document"
+                        : "Read exact document"}
                     </button>
                     <button
                       className="button button-primary"
                       disabled={
-                        Boolean(deciding) || !connected || Boolean(editing)
+                        Boolean(deciding) ||
+                        !connected ||
+                        Boolean(editing) ||
+                        !decisionReady
                       }
                       onClick={() => {
                         void decide("approve");
@@ -1739,7 +1898,10 @@ function RunDetail({
                     <button
                       className="button button-quiet"
                       disabled={
-                        Boolean(deciding) || !connected || Boolean(editing)
+                        Boolean(deciding) ||
+                        !connected ||
+                        Boolean(editing) ||
+                        !decisionReady
                       }
                       onClick={() => {
                         void decide("reject");
@@ -1753,7 +1915,9 @@ function RunDetail({
                       <button
                         type="button"
                         className="button button-secondary"
-                        disabled={Boolean(deciding) || !connected}
+                        disabled={
+                          Boolean(deciding) || !connected || reviewNeeded
+                        }
                         onClick={() => {
                           const next = openDraftSession(
                             ownerId,

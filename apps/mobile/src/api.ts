@@ -62,6 +62,7 @@ export class NativeApi {
   constructor(
     baseUrl: string,
     private readonly authHeaders: AuthHeadersProvider = async () => ({}),
+    private readonly options: { timeoutMs?: number } = {},
   ) {
     this.baseUrl = normalizeBackendUrl(baseUrl);
   }
@@ -69,11 +70,26 @@ export class NativeApi {
   private async request(path: string, init?: RequestInit): Promise<unknown> {
     const controller = new AbortController();
     let timedOut = false;
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, 20_000);
-    try {
+    const deadlineMs = this.options.timeoutMs ?? 20_000;
+    if (!Number.isFinite(deadlineMs) || deadlineMs <= 0 || deadlineMs > 20_000)
+      throw new NativeApiError(
+        "Use a request deadline within twenty seconds.",
+        "INVALID_DEADLINE",
+      );
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        reject(
+          new NativeApiError(
+            "The backend request timed out. The saved result has not been confirmed; refresh before deciding again.",
+            "TIMEOUT",
+          ),
+        );
+      }, deadlineMs);
+    });
+    const operation = async () => {
       let headers: Record<string, string>;
       try {
         headers = await this.authHeaders();
@@ -83,6 +99,11 @@ export class NativeApi {
           "SESSION_UNAVAILABLE",
         );
       }
+      if (controller.signal.aborted)
+        throw new NativeApiError(
+          "The backend request timed out. Refresh before deciding again.",
+          "TIMEOUT",
+        );
       let response: Response;
       try {
         response = await fetch(`${this.baseUrl}/v1${path}`, {
@@ -105,6 +126,13 @@ export class NativeApi {
         );
       }
       let body: unknown;
+      // The status is authoritative even when a proxy/error body is not JSON.
+      if (response.status === 401)
+        throw new NativeApiError(
+          "Your owner session is missing or has expired. Sign in again before loading runs or recording a decision.",
+          "SESSION_REQUIRED",
+          401,
+        );
       try {
         body = await response.json();
       } catch {
@@ -121,12 +149,17 @@ export class NativeApi {
           response.status === 401
             ? "Your owner session is missing or has expired. Sign in again before loading runs or recording a decision."
             : (error?.message ??
-              "The backend could not complete this request."),
+                "The backend could not complete this request."),
           error?.code ?? "REQUEST_FAILED",
           response.status,
         );
       }
       return body;
+    };
+    try {
+      // Promise.race attaches rejection handlers to both branches, including a
+      // late failure from a transport/header reader that ignores cancellation.
+      return await Promise.race([operation(), deadline]);
     } finally {
       clearTimeout(timeout);
     }

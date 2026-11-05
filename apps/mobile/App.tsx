@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -23,6 +23,18 @@ import {
   type WorkspaceSnapshot,
 } from "@vuzmi/core";
 import { NativeApi, NativeApiError } from "./src/api";
+import { NativeLifecycle, mergeNativeRuns } from "./src/lifecycle";
+import {
+  acknowledgeNativeReview,
+  canAcknowledgeNativeReview,
+  canDecideNativeReview,
+  captureNativeDecision,
+  confirmNativeReview,
+  initialNativeReview,
+  observeNativeReview,
+  openNativeDocument,
+  requireNativeRereview,
+} from "./src/review";
 import {
   createNativeAuth,
   sessionHeaders,
@@ -55,15 +67,10 @@ function date(value: string): string {
     timeStyle: "short",
   }).format(new Date(value));
 }
-function mergeRuns(current: Run[], incoming: Run[]): Run[] {
-  const result = new Map(current.map((run) => [run.id, run]));
-  for (const run of incoming)
-    if (!result.has(run.id) || result.get(run.id)!.revision <= run.revision)
-      result.set(run.id, run);
-  return [...result.values()].sort((a, b) =>
-    b.createdAt.localeCompare(a.createdAt),
-  );
-}
+type ProtectedRequest = <T>(
+  operation: () => Promise<T>,
+  apply?: (value: T) => void,
+) => Promise<T | undefined>;
 
 export default function App() {
   const [client, setClient] = useState<NativeApi | null>(null);
@@ -77,57 +84,94 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastChecked, setLastChecked] = useState<string | null>(null);
-  const requestVersion = useRef(0);
-  const connectionVersion = useRef(0);
-  const observeAuth = (state: AuthState) => {
+  const [connectionEpoch, setConnectionEpoch] = useState(0);
+  const expiryRef = useRef<(error: unknown) => void>(() => {});
+  const lifecycleRef = useRef<NativeLifecycle | null>(null);
+  if (!lifecycleRef.current)
+    lifecycleRef.current = new NativeLifecycle((caught) =>
+      expiryRef.current(caught),
+    );
+  const lifecycle = lifecycleRef.current;
+  const scope = useMemo(
+    () => lifecycle.bind(connectionEpoch),
+    [lifecycle, connectionEpoch],
+  );
+  const observeAuth = useCallback((state: AuthState | null) => {
     authRef.current = state;
     setAuthState(state);
+  }, []);
+  expiryRef.current = (caught) => {
+    setConnectionEpoch(lifecycle.current());
+    observeAuth({ mode: "owner", setupNeeded: false, user: null });
+    setSnapshot(null);
+    setSelectedId(null);
+    setTab("connection");
+    setLastChecked(null);
+    setConnecting(false);
+    setRefreshing(false);
+    setError(message(caught));
+    AccessibilityInfo.announceForAccessibility(
+      "Your owner session ended. Sign in again.",
+    );
   };
   const storeWorkspace = (workspace: WorkspaceSnapshot) => {
-    setSnapshot({ ...workspace, runs: mergeRuns([], workspace.runs) });
+    setSnapshot({ ...workspace, runs: mergeNativeRuns([], workspace.runs) });
     setSelectedId(null);
     setTab("runs");
     setLastChecked(new Date().toISOString());
   };
 
   const connect = async (url: string) => {
-    const version = ++connectionVersion.current;
-    requestVersion.current += 1;
+    const version = lifecycle.begin();
+    setConnectionEpoch(version);
+    setSnapshot(null);
+    setSelectedId(null);
+    observeAuth(null);
+    setClient(null);
+    setAuthClient(null);
+    setRefreshing(false);
     setConnecting(true);
     setError(null);
     try {
       const session = createNativeAuth(url);
       const next = new NativeApi(url, sessionHeaders(session));
-      const state = await next.authState();
-      if (version !== connectionVersion.current) return;
-      // Better Auth's client is a callable proxy; keep React from invoking it as a state updater.
       setClient(next);
+      // Better Auth's client is callable; never use it as a React updater.
       setAuthClient(() => session);
+      const state = await lifecycle.request(version, () => next.authState());
+      if (!state || !lifecycle.isCurrent(version)) return;
       observeAuth(state);
-      setSelectedId(null);
-      setSnapshot(null);
       if (state.mode === "owner" && (state.setupNeeded || !state.user)) {
         setTab("connection");
         return;
       }
-      const workspace = await next.workspace();
-      if (version !== connectionVersion.current) return;
-      storeWorkspace(workspace);
-      AccessibilityInfo.announceForAccessibility(
-        state.mode === "development"
-          ? "Connected with explicit development authentication bypass."
-          : "Owner session verified. Workspace runs are ready.",
+      await lifecycle.request(
+        version,
+        () => next.workspace(),
+        (workspace) => {
+          storeWorkspace(workspace);
+          AccessibilityInfo.announceForAccessibility(
+            state.mode === "development"
+              ? "Connected with explicit development authentication bypass."
+              : "Owner session verified. Workspace runs are ready.",
+          );
+        },
       );
     } catch (caught) {
-      if (version === connectionVersion.current) setError(message(caught));
+      lifecycle.commit(version, () => setError(message(caught)));
     } finally {
-      if (version === connectionVersion.current) setConnecting(false);
+      lifecycle.commit(version, () => setConnecting(false));
     }
   };
 
   const signIn = async (email: string, password: string): Promise<boolean> => {
     if (!authClient || !client) return false;
-    const version = ++connectionVersion.current;
+    const version = scope.begin();
+    if (version === undefined) return false;
+    setConnectionEpoch(version);
+    setSnapshot(null);
+    setSelectedId(null);
+    setRefreshing(false);
     setConnecting(true);
     setError(null);
     try {
@@ -135,124 +179,139 @@ export default function App() {
         email: email.trim(),
         password,
       });
+      if (!lifecycle.isCurrent(version)) return false;
       if (result.error)
         throw new Error(result.error.message ?? "The owner could not sign in.");
-      const state = await client.authState();
-      if (version !== connectionVersion.current) return false;
+      const state = await lifecycle.request(version, () => client.authState());
+      if (!state || !lifecycle.isCurrent(version)) return false;
       if (state.mode !== "owner" || !state.user || state.setupNeeded)
         throw new Error(
           "An authenticated owner session was not confirmed. Reconnect and inspect backend mode.",
         );
       observeAuth(state);
-      const workspace = await client.workspace();
-      if (version !== connectionVersion.current) return false;
-      storeWorkspace(workspace);
+      const workspace = await lifecycle.request(
+        version,
+        () => client.workspace(),
+        storeWorkspace,
+      );
+      if (!workspace || !lifecycle.isCurrent(version)) return false;
       AccessibilityInfo.announceForAccessibility(
         "Signed in. Owner session verified.",
       );
       return true;
     } catch (caught) {
-      if (version === connectionVersion.current) setError(message(caught));
+      lifecycle.commit(version, () => setError(message(caught)));
       return false;
     } finally {
-      if (version === connectionVersion.current) setConnecting(false);
+      lifecycle.commit(version, () => setConnecting(false));
     }
   };
 
   const signOut = async () => {
     if (!authClient || !client) return;
-    const version = ++connectionVersion.current;
+    const version = scope.begin();
+    if (version === undefined) return;
+    setConnectionEpoch(version);
     setConnecting(true);
+    setRefreshing(false);
     setError(null);
     try {
       const result = await authClient.signOut();
+      if (!lifecycle.isCurrent(version)) return;
       if (result.error)
         throw new Error(
           result.error.message ?? "Sign-out could not be confirmed.",
         );
-      const state = await client.authState();
-      if (version !== connectionVersion.current) return;
+      const state = await lifecycle.request(version, () => client.authState());
+      if (!state || !lifecycle.isCurrent(version)) return;
       if (state.user)
         throw new Error(
           "The backend still reports an owner session. Sign-out has not been confirmed.",
         );
-      requestVersion.current += 1;
+      lifecycle.invalidate(version);
+      setConnectionEpoch(lifecycle.current());
       observeAuth(state);
       setSnapshot(null);
       setSelectedId(null);
       setTab("connection");
+      setConnecting(false);
       AccessibilityInfo.announceForAccessibility(
         "Signed out. The owner session is no longer active.",
       );
     } catch (caught) {
-      if (version === connectionVersion.current) setError(message(caught));
+      lifecycle.commit(version, () => setError(message(caught)));
     } finally {
-      if (version === connectionVersion.current) setConnecting(false);
+      lifecycle.commit(version, () => setConnecting(false));
     }
   };
 
   const refresh = useCallback(
     async (showSpinner = false) => {
-      if (!client) return;
-      const version = ++requestVersion.current;
+      if (!client || connecting || !scope.isCurrent()) return;
       if (showSpinner) setRefreshing(true);
-      try {
-        const state = await client.authState();
-        if (version !== requestVersion.current) return;
-        if (authRef.current && state.mode !== authRef.current.mode) {
-          setSnapshot(null);
-          setSelectedId(null);
-          setTab("connection");
-          setError(
-            "Backend authentication mode changed. Connect explicitly to inspect the new mode; no fallback was selected.",
-          );
-          setRefreshing(false);
-          return;
-        }
-        authRef.current = state;
-        setAuthState(state);
-        if (state.mode === "owner" && (!state.user || state.setupNeeded)) {
-          setSnapshot(null);
-          setSelectedId(null);
-          setTab("connection");
-          setError(
-            state.setupNeeded
-              ? "Complete owner setup in the web workspace before signing in here."
-              : "Your owner session has ended. Sign in again before loading runs or recording a decision.",
-          );
-          setRefreshing(false);
-          return;
-        }
-        const workspace = await client.workspace();
-        if (version !== requestVersion.current) return;
-        setSnapshot((current) => ({
-          ...workspace,
-          runs: mergeRuns(current?.runs ?? [], workspace.runs),
-        }));
-        setError(null);
-        setLastChecked(new Date().toISOString());
-      } catch (caught) {
-        if (version !== requestVersion.current) return;
-        setError(message(caught));
-        if (caught instanceof NativeApiError && caught.status === 401) {
-          setSnapshot(null);
-          setSelectedId(null);
-          setTab("connection");
-          if (authRef.current?.mode === "owner") {
-            const ended = { ...authRef.current, user: null };
-            authRef.current = ended;
-            setAuthState(ended);
+      return scope.refresh(async () => {
+        try {
+          const state = await scope.request(() => client.authState());
+          if (!state || !scope.isCurrent()) return;
+          if (authRef.current && state.mode !== authRef.current.mode) {
+            scope.invalidate();
+            setConnectionEpoch(lifecycle.current());
+            observeAuth(null);
+            setSnapshot(null);
+            setSelectedId(null);
+            setTab("connection");
+            setConnecting(false);
+            setRefreshing(false);
+            setError(
+              "Backend authentication mode changed. Connect explicitly to inspect the new mode; no fallback was selected.",
+            );
+            return;
           }
+          observeAuth(state);
+          if (state.mode === "owner" && (!state.user || state.setupNeeded)) {
+            scope.invalidate();
+            setConnectionEpoch(lifecycle.current());
+            setSnapshot(null);
+            setSelectedId(null);
+            setTab("connection");
+            setConnecting(false);
+            setRefreshing(false);
+            setError(
+              state.setupNeeded
+                ? "Complete owner setup in the web workspace before signing in here."
+                : "Your owner session has ended. Sign in again before loading runs or recording a decision.",
+            );
+            return;
+          }
+          await scope.request(
+            () => client.workspace(),
+            (workspace) => {
+              setSnapshot((current) => ({
+                ...workspace,
+                runs: mergeNativeRuns(current?.runs ?? [], workspace.runs),
+              }));
+              setError(null);
+              setLastChecked(new Date().toISOString());
+            },
+          );
+        } catch (caught) {
+          scope.commit(() => setError(message(caught)));
+        } finally {
+          scope.commit(() => setRefreshing(false));
         }
-      } finally {
-        if (version === requestVersion.current) setRefreshing(false);
-      }
+      });
     },
-    [client],
+    [client, connecting, scope, lifecycle, observeAuth],
   );
 
+  useEffect(
+    () => () => {
+      lifecycle.invalidate();
+    },
+    [lifecycle],
+  );
   useEffect(() => {
-    if (!client || !snapshot) return;
+    if (!client || !snapshot || connecting || !scope.isCurrent()) return;
     const interval = setInterval(() => {
       if (AppState.currentState === "active") void refresh();
     }, 5000);
@@ -262,34 +321,32 @@ export default function App() {
     return () => {
       clearInterval(interval);
       subscription.remove();
-      requestVersion.current += 1;
+      scope.invalidate();
     };
-  }, [client, Boolean(snapshot), refresh]);
+  }, [client, Boolean(snapshot), connecting, refresh, scope]);
 
   const updateRun = useCallback((run: Run) => {
-    requestVersion.current += 1;
     setSnapshot((current) =>
-      current ? { ...current, runs: mergeRuns(current.runs, [run]) } : current,
+      current
+        ? { ...current, runs: mergeNativeRuns(current.runs, [run]) }
+        : current,
     );
-    setRefreshing(false);
     setError(null);
     setLastChecked(new Date().toISOString());
     AccessibilityInfo.announceForAccessibility(
       `${run.title}: ${statusLabels[run.status]}.${run.artifact ? " Local artifact saved." : run.decision?.decision === "reject" ? " No artifact was saved." : ""}`,
     );
   }, []);
+  const protectedRequest: ProtectedRequest = (operation, apply) =>
+    connecting ? Promise.resolve(undefined) : scope.request(operation, apply);
   const openRun = (run: Run) => {
+    if (!client || connecting || !scope.isCurrent()) return;
     setSelectedId(run.id);
-    const version = requestVersion.current;
-    if (client)
-      void client
-        .run(run.id)
-        .then((fresh) => {
-          if (version === requestVersion.current) updateRun(fresh);
-        })
-        .catch((caught: unknown) => {
-          if (version === requestVersion.current) setError(message(caught));
-        });
+    void scope
+      .request(() => client.run(run.id), updateRun)
+      .catch((caught: unknown) => {
+        scope.commit(() => setError(message(caught)));
+      });
   };
   const selected = snapshot?.runs.find((run) => run.id === selectedId);
   const navigate = (next: Tab) => {
@@ -297,16 +354,17 @@ export default function App() {
     setTab(next);
   };
   const disconnect = () => {
-    requestVersion.current += 1;
-    connectionVersion.current += 1;
+    if (!scope.close()) return;
+    setConnectionEpoch(lifecycle.current());
     setClient(null);
     setAuthClient(null);
-    authRef.current = null;
-    setAuthState(null);
+    observeAuth(null);
     setSnapshot(null);
     setSelectedId(null);
     setError(null);
     setLastChecked(null);
+    setConnecting(false);
+    setRefreshing(false);
     setTab("connection");
   };
 
@@ -348,6 +406,7 @@ export default function App() {
               key={selected.id}
               run={selected}
               client={client}
+              protectedRequest={protectedRequest}
               connected={!error && !connecting}
               storage={snapshot.workspace.storage}
               onBack={() => setSelectedId(null)}
@@ -784,6 +843,7 @@ function RunList({
 function RunDetail({
   run,
   client,
+  protectedRequest,
   connected,
   storage,
   onBack,
@@ -794,6 +854,7 @@ function RunDetail({
 }: {
   run: Run;
   client: NativeApi;
+  protectedRequest: ProtectedRequest;
   connected: boolean;
   storage: WorkspaceSnapshot["workspace"]["storage"];
   onBack: () => void;
@@ -811,33 +872,127 @@ function RunDetail({
   const [selectedCitation, setSelectedCitation] = useState<string | null>(null);
   const [decision, setDecision] = useState<"approve" | "reject" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reviewState, setReviewState] = useState(() =>
+    initialNativeReview(run),
+  );
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const review = observeNativeReview(reviewState, run);
+  const deciding = useRef(false);
+  const active = useRef(true);
+  const announcedReview = useRef<string | null>(null);
+  useEffect(() => {
+    const version = `${run.revision}:${run.proposal?.fingerprint ?? "none"}`;
+    if (review.changed && announcedReview.current !== version) {
+      announcedReview.current = version;
+      AccessibilityInfo.announceForAccessibility(
+        "Proposal changed. Review the updated exact document and acknowledge its version before deciding.",
+      );
+    }
+  }, [review.changed, run.revision, run.proposal?.fingerprint]);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    setReviewState((current) => observeNativeReview(current, run));
+  }, [run.id, run.revision, run.proposal?.fingerprint, run.status]);
   const proposal = run.proposal;
   const document = run.artifact?.content ?? proposal?.content;
   const approved = Boolean(run.artifact);
   const rejected = run.decision?.decision === "reject";
+  const openDocument = () => {
+    if (review.refreshRequired) {
+      if (reviewLoading) return;
+      setReviewLoading(true);
+      void protectedRequest(
+        () => client.run(run.id),
+        (fresh) => {
+          onUpdate(fresh);
+          setReviewState((current) =>
+            openNativeDocument(confirmNativeReview(current, fresh), fresh),
+          );
+          setSection("document");
+        },
+      )
+        .catch((caught: unknown) => {
+          if (active.current) setError(message(caught));
+        })
+        .finally(() => {
+          if (active.current) setReviewLoading(false);
+        });
+    } else {
+      setReviewState((current) => openNativeDocument(current, run));
+      setSection("document");
+    }
+  };
+  const changedNotice = review.changed ? (
+    <Panel style={{ marginBottom: 18, borderColor: colors.lime }}>
+      <Eyebrow>PROPOSAL CHANGED</Eyebrow>
+      <Text style={styles.body}>
+        The waiting document changed. Approval and rejection are blocked until
+        you deliberately review and acknowledge this exact version.
+      </Text>
+      <Text style={styles.caption}>
+        Current proposal revision {run.revision}
+      </Text>
+      <Text selectable style={mobile.hash}>
+        {run.proposal?.fingerprint}
+      </Text>
+      {review.refreshRequired && (
+        <Text style={styles.caption}>
+          The previous decision outcome is unconfirmed. This action first
+          reloads the saved proposal; the old version cannot be acknowledged.
+        </Text>
+      )}
+      <Action
+        label={
+          reviewLoading ? "Loading saved proposal…" : "Review updated document"
+        }
+        kind="secondary"
+        disabled={reviewLoading}
+        onPress={openDocument}
+      />
+    </Panel>
+  ) : null;
   const showEvidence = (citation?: string) => {
     setReturnSection(section === "document" ? "document" : "summary");
     setSelectedCitation(citation ?? null);
     setSection("evidence");
   };
   const decide = async (choice: "approve" | "reject") => {
-    if (!proposal || run.status !== "waiting_approval") return;
+    const captured = captureNativeDecision(review, run);
+    if (!captured || !connected || deciding.current) return;
+    deciding.current = true;
     setDecision(choice);
     setError(null);
     try {
-      onUpdate(await client.decide(run, choice));
+      await protectedRequest(() => client.decide(captured, choice), onUpdate);
     } catch (caught) {
+      if (!active.current) return;
       setError(message(caught));
       AccessibilityInfo.announceForAccessibility(message(caught));
-      if (caught instanceof NativeApiError && caught.status === 409) {
+      if (
+        caught instanceof NativeApiError &&
+        (caught.status === 409 || caught.code === "TIMEOUT")
+      ) {
+        setReviewState((current) => requireNativeRereview(current, captured));
         try {
-          onUpdate(await client.run(run.id));
+          await protectedRequest(
+            () => client.run(captured.id),
+            (fresh) => {
+              setReviewState((current) => confirmNativeReview(current, fresh));
+              onUpdate(fresh);
+            },
+          );
         } catch {
           /* Preserve the visible conflict message. */
         }
       }
     } finally {
-      setDecision(null);
+      deciding.current = false;
+      if (active.current) setDecision(null);
     }
   };
   const back = () => {
@@ -883,6 +1038,7 @@ function RunDetail({
       <View style={{ flex: 1 }}>
         {header}
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          {changedNotice}
           <Eyebrow>
             {approved
               ? "SAVED ARTIFACT"
@@ -897,6 +1053,11 @@ function RunDetail({
             Revision {run.decision?.revision ?? run.revision} · Selectable
             complete Markdown · No content is omitted.
           </Text>
+          {proposal && (
+            <Text selectable style={[mobile.hash, { marginBottom: 18 }]}>
+              Proposal fingerprint {proposal.fingerprint}
+            </Text>
+          )}
           {run.mode === "ollama" && (
             <Panel style={{ marginBottom: 18 }}>
               <Text style={styles.body}>
@@ -925,6 +1086,28 @@ function RunDetail({
               ))}
             </View>
           )}
+          {review.changed && (
+            <View style={{ marginTop: 25, gap: 12 }}>
+              <Text style={styles.caption}>
+                Acknowledgment applies only to the revision and fingerprint
+                displayed above. A further update requires review again.
+              </Text>
+              <Action
+                label={`I reviewed revision ${run.revision}`}
+                disabled={!canAcknowledgeNativeReview(review, run)}
+                onPress={() => {
+                  if (!canAcknowledgeNativeReview(review, run)) return;
+                  setReviewState((current) =>
+                    acknowledgeNativeReview(current, run),
+                  );
+                  setSection("summary");
+                  AccessibilityInfo.announceForAccessibility(
+                    `Revision ${run.revision} acknowledged for review.`,
+                  );
+                }}
+              />
+            </View>
+          )}
           <View style={{ marginTop: 25 }}>
             <Action
               label="Back to review"
@@ -949,6 +1132,7 @@ function RunDetail({
       <View style={{ flex: 1 }}>
         {header}
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          {changedNotice}
           <Eyebrow>EXACT RETAINED SNAPSHOT</Eyebrow>
           <Text accessibilityRole="header" style={styles.heading}>
             {evidence?.status === "insufficient"
@@ -1058,6 +1242,7 @@ function RunDetail({
           {domainLabels[run.domain]} · {date(run.createdAt)}
         </Text>
         {connectionError && <ErrorNotice message={connectionError} />}
+        {changedNotice}
         <Panel
           style={[mobile.reviewPanel, approved && { borderColor: "#4a7358" }]}
         >
@@ -1104,7 +1289,7 @@ function RunDetail({
               label="Read exact document"
               kind="secondary"
               hint="Opens the full selectable artifact without truncation"
-              onPress={() => setSection("document")}
+              onPress={openDocument}
             />
           )}
           <Action
@@ -1127,7 +1312,11 @@ function RunDetail({
                     ? "Saving local result…"
                     : "Approve local result"
                 }
-                disabled={!connected || Boolean(decision)}
+                disabled={
+                  !connected ||
+                  Boolean(decision) ||
+                  !canDecideNativeReview(review, run)
+                }
                 busy={decision === "approve"}
                 onPress={() => {
                   void decide("approve");
@@ -1141,7 +1330,11 @@ function RunDetail({
                     : "Reject proposal"
                 }
                 kind="quiet"
-                disabled={!connected || Boolean(decision)}
+                disabled={
+                  !connected ||
+                  Boolean(decision) ||
+                  !canDecideNativeReview(review, run)
+                }
                 busy={decision === "reject"}
                 onPress={() => {
                   void decide("reject");
@@ -1177,7 +1370,7 @@ function RunDetail({
             <Action
               label="Open full document"
               kind="secondary"
-              onPress={() => setSection("document")}
+              onPress={openDocument}
             />
           </Panel>
         )}
