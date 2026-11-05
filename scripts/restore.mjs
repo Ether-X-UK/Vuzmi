@@ -160,9 +160,30 @@ export async function restoreDatabase({
       await client.query(
         `UPDATE ${queue}.job SET state='cancelled',completed_on=now()
         WHERE name=ANY($1::text[]) AND state IN ('created','retry','active')`,
-        [["vuzmi-generate-release", "vuzmi-index-source"]],
+        [
+          [
+            "vuzmi-generate-release",
+            "vuzmi-index-source",
+            "vuzmi-development-patch",
+          ],
+        ],
       );
       await client.query(`DELETE FROM ${runtime}.worker_heartbeats`);
+      // Older bundles predate the development module. New bundles must not
+      // restore live worker authority or let an old execution publish output.
+      const development = await client.query(
+        "SELECT to_regclass($1) AS runtime,to_regclass($2) AS attempts",
+        [
+          `${manifest.runtimeSchema}.development_runtime`,
+          `${manifest.runtimeSchema}.development_attempts`,
+        ],
+      );
+      if (development.rows[0].runtime)
+        await client.query(`DELETE FROM ${runtime}.development_runtime`);
+      if (development.rows[0].attempts)
+        await client.query(
+          `UPDATE ${runtime}.development_attempts SET state='closed' WHERE state IN ('active','recovering')`,
+        );
       await client.query("COMMIT");
     } catch {
       await client.query("ROLLBACK").catch(() => undefined);

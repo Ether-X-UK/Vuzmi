@@ -28,3 +28,18 @@ export type {
   ReleaseGenerator,
   WorkerOptions,
 } from "./worker.js";
+export {
+  DevelopmentRepository,
+  DevelopmentError,
+  DEVELOPMENT_QUEUE,
+} from "./development.js";
+export type { DevelopmentAttempt, DevelopmentJobData } from "./development.js";
+export {
+  processDevelopmentJob,
+  startDevelopmentWorker,
+} from "./development-worker.js";
+export type {
+  DevelopmentRunnerAdapter,
+  DevelopmentGenerator,
+} from "./development-worker.js";
+export { createDevelopmentRunner } from "./development-runner.js";

@@ -48,6 +48,8 @@ Restoration uses `pg_restore --single-transaction --no-owner --no-privileges --n
 
 After the archive succeeds, a separate recovery transaction cancels restored pending/active generation and indexing jobs and clears stale worker heartbeats. This preserves exact run evidence, approved artifacts, decisions, event history, sources, memories, profiles, and auth ownership. It prevents a later worker start from replaying restored inference. No API, worker, Ollama, model pull, or cloud request is started by the tool.
 
+Development jobs are also quarantined, runtime readiness is cleared and active/recovering attempts are closed. A restored database must not try to clean up execution names on the original host or resume unknown model/check work. Exact approved development packages and append-only events survive restoration. Runner configuration, VM images and model weights are operator prerequisites outside the backup; provision and verify them independently on the new host. Old backups without development tables remain supported.
+
 If quarantine fails after the archive transaction, the command reports that specific incomplete recovery. Keep services stopped. The target is now nonempty and will refuse a second restore; inspect/repair it privately or provision another empty disposable target. There is no destructive retry option.
 
 ## Before serving recovered data

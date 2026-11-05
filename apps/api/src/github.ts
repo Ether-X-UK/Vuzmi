@@ -7,6 +7,8 @@ import {
   githubPreviewInputSchema,
   githubPreviewSchema,
   sourceInputSchema,
+  developmentIssueSchema,
+  type DevelopmentIssue,
   type GithubImportInput,
   type GithubOrigin,
   type GithubPreview,
@@ -313,6 +315,49 @@ export class GithubKnowledgeImporter {
           "GITHUB_REPOSITORY_CHANGED",
           "The public repository identity changed after preview. Preview the file again before saving.",
         );
+    });
+  }
+
+  async issue(number: number): Promise<DevelopmentIssue> {
+    if (!Number.isSafeInteger(number) || number < 1 || number > 10_000_000)
+      throw new HttpError(
+        400,
+        "INVALID_INPUT",
+        "Choose a positive public Vuzmi issue number within the supported limit.",
+      );
+    return this.network(async (context) => {
+      await this.repository(context);
+      const value = await this.json(`/issues/${number}`, 64 * 1024, context);
+      if ("pull_request" in value)
+        throw new HttpError(
+          422,
+          "GITHUB_ISSUE_REQUIRED",
+          "Select a public Vuzmi issue, rather than a pull request.",
+        );
+      const text = `${typeof value.title === "string" ? value.title : ""}${typeof value.body === "string" ? value.body : ""}`;
+      if (
+        value.number !== number ||
+        /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text) ||
+        Buffer.byteLength(text, "utf8") > 24_000 ||
+        Buffer.from(text, "utf8").toString("utf8") !== text
+      )
+        throw invalidResponse();
+      const parsed = developmentIssueSchema.safeParse({
+        id: value.id,
+        number: value.number,
+        title: value.title,
+        body: value.body ?? "",
+        url: value.html_url,
+        updatedAt: value.updated_at,
+        fetchedAt: this.now().toISOString(),
+      });
+      if (
+        !parsed.success ||
+        parsed.data.url !==
+          `https://github.com/Ether-X-UK/Vuzmi/issues/${number}`
+      )
+        throw invalidResponse();
+      return parsed.data;
     });
   }
 

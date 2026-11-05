@@ -195,7 +195,7 @@ The product goal is extensive automation. The release process must continue to d
 | Models, machine, hosting, and budget   | Confirmed: existing hardware, local testbed, zero extra cost. MacBook M5 + local Ollama now; CPU-only existing infrastructure later. Model downloads are allowed. Verify models and any eligible API access. | Runtime prerequisites, Ollama model selection, infrastructure issue, and provider gating   |
 | License/commercial constraints         | Full code open source; AGPL-3.0-only selected                                                                                                                                                                | Repository license, distribution terms, and hosted-service positioning                     |
 | Infrastructure request repository      | Confirmed: `XeoNote/Infrastructure-`; existing staff manage resources and Cloudflare DNS for `vuzmi.com`.                                                                                                    | Issue #310 posted on 5 November 2026; target allocation/response pending                   |
-| First external integration             | Local change brief and artifact outbox; later integration undecided                                                                                                                                          | Connector implementation and authorization tests                                           |
+| First external integration             | GitHub knowledge import selected and implemented; development workflow is next                                                                                                                               | Connector implementation and authorization tests                                           |
 | iOS distribution expectation           | Expo companion with local tooling; no paid build/App Store plan assumed                                                                                                                                      | Actual local build availability and companion scope                                        |
 
 Revise the plan as remaining inputs arrive. The founder mission, zero-added-cost constraint, trust boundaries, and truthful reporting remain requirements.
@@ -237,3 +237,21 @@ The founder selected this first connector after approving the actual local found
 Private repositories, directory crawling, periodic sync, credentials, repository writes and native import UI are deferred. iOS continues to consume shared source/evidence contracts. Existing infrastructure allocation remains a separate pending gate.
 
 Evidence: 188 unit/client/API checks, 60 PostgreSQL checks, backup/restore of origin and import receipts, strict root/mobile TypeScript, web build, 802-module iOS export and a fresh signed Xcode Simulator build pass. The real owner session previewed/imported the public README at a pinned commit; local embeddings produced six passages and the corrected retrieval returned four attributed excerpts. Imported detail/expanded hashes fit 390px. Timeout, rate-limit, expired-preview, concurrent replay and deletion failure boundaries use fixtures rather than individually induced operator UI failures.
+
+## Development workflow increment — 5 November 2026
+
+Founder approved the issue/brief → patch → isolated checks → exact review workflow. Architecture§25 precedes UI design and implementation. First profile fixes a real web401/session-expiry bug at a pinned owned revision with one permitted source file and sealed acceptance checks.
+
+- [x] Record architecture, runner permissions and delivery plan; then record the web review design.
+- [x] Provision a dedicated zero-cost VM/runtime with no host-directory/agent sharing; verify isolation and fixed check-image provenance.
+- [x] Add shared development contracts, validated full-file replacement/diff, local JSON-model transport and failure-boundary tests.
+- [x] Add append-only persistence/queue migration, owner-only API, pinned task/issue/context and worker/attempt fencing with restart/restore coverage.
+- [x] Run actual baseline and candidate checks in fresh restricted containers; persist honest failures, timeouts, bounded logs and exact identities.
+- [x] Build the web creation/list/diff/check/review/download flow; changed or unreviewed packages cannot be approved.
+- [x] Verify paths/commands/policy cannot expand, secrets/network/host mounts are unavailable, resource/time/output limits and cancellation cleanup work.
+- [x] Verify concurrent/replayed creation/decisions, lost worker ownership, stale output, unavailable runner, backup restore and existing founder/native compatibility.
+- [x] Run strict checks/build, PostgreSQL/recovery, isolated runner tests and browser rehearsal; use a real local model on the owned acceptance task and present its exact package for founder review.
+
+A passed saved package is not an applied checkout change or pull request. The first profile intentionally supports one known code path; broader profiles, unrestricted edits, dependency changes, native development review and external writes are deferred.
+
+Completed local evidence: 211 application tests, 87 PostgreSQL tests, ten runner fixtures and six actual VM gates pass, with strict TypeScript, web build, 803-module iOS export and backup/restore. The existing Gemma 26B/A4B model produced the minimal statement move in 48.99s; the baseline reproduced two failures and its candidate passed all six checks. Five prior 4B/7B proposals remain visibly rejected by validation/checks. A separate synthetic browser rehearsal verified exact local save/download, competing views and rejection. The actual passing package is awaiting the founder's revision 7 review; it has not been applied to the checkout. Hosted Linux verification/source publication follows the local gate.

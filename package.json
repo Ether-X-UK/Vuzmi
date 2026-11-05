@@ -30,6 +30,8 @@
     "backup:local": "node scripts/backup.mjs",
     "restore:local": "node scripts/restore.mjs",
     "test:recovery": "node --import tsx scripts/test-recovery.mjs",
+    "setup:development": "node --import tsx scripts/setup-development.mjs",
+    "test:development-runner": "node --import tsx --test packages/runtime/test/development-runner.integration.ts",
     "package:source": "node scripts/package-source.mjs"
   },
   "devDependencies": {

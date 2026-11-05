@@ -38,6 +38,7 @@ try {
     : undefined;
   app = await buildApp({
     ...config,
+    ollamaDevelopmentModel: config.ollamaDevelopmentModel,
     auth,
     authBaseUrl: config.publicUrl,
     webRoot:

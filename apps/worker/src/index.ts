@@ -2,8 +2,14 @@ import {
   discoverEmbeddingProfile,
   embedLocal,
   generateReleaseBrief,
+  generateDevelopmentPatch,
 } from "@vuzmi/providers";
-import { PostgresRunRepository, startWorker } from "@vuzmi/runtime";
+import {
+  PostgresRunRepository,
+  startWorker,
+  startDevelopmentWorker,
+  createDevelopmentRunner,
+} from "@vuzmi/runtime";
 import { loadServerConfig } from "@vuzmi/runtime/config";
 
 const config = loadServerConfig();
@@ -13,11 +19,15 @@ if (!config.databaseUrl)
   );
 
 let repository: PostgresRunRepository | undefined;
+let worker: Awaited<ReturnType<typeof startWorker>> | undefined;
+let developmentWorker:
+  | Awaited<ReturnType<typeof startDevelopmentWorker>>
+  | undefined;
 try {
   repository = await PostgresRunRepository.connect({
     connectionString: config.databaseUrl,
   });
-  const worker = await startWorker({
+  worker = await startWorker({
     repository,
     generate: (input) =>
       generateReleaseBrief({ ...input, baseUrl: config.ollamaBaseUrl }),
@@ -41,12 +51,21 @@ try {
         "A local worker operation failed. Inspect the run ledger and local dependency health.",
       ),
   });
+  developmentWorker = await startDevelopmentWorker({
+    repository,
+    runner: createDevelopmentRunner(),
+    generate: (input) =>
+      generateDevelopmentPatch({ ...input, baseUrl: config.ollamaBaseUrl }),
+    onError: () =>
+      console.error(
+        "A bounded development operation failed. Inspect its persisted attempt and isolated runner readiness.",
+      ),
+  });
   let closing = false;
   const close = (): void => {
     if (closing) return;
     closing = true;
-    void worker
-      .stop()
+    void Promise.all([worker!.stop(), developmentWorker!.stop()])
       .then(() => repository!.close())
       .then(
         () => process.exit(0),
@@ -59,6 +78,8 @@ try {
     "Vuzmi local Ollama worker is ready. Cloud execution is disabled.",
   );
 } catch (error) {
+  await developmentWorker?.stop().catch(() => undefined);
+  await worker?.stop().catch(() => undefined);
   await repository?.close().catch(() => undefined);
   console.error(
     "Vuzmi worker could not start:",

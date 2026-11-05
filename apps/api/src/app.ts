@@ -11,6 +11,7 @@ import {
   decideRun,
   DomainError,
   DraftRevisionError,
+  DevelopmentError,
   reviseDraftSchema,
 } from "@vuzmi/core";
 import type {
@@ -35,6 +36,7 @@ import { HttpError } from "./errors.js";
 import { registerKnowledgeRoutes } from "./knowledge.js";
 import { registerOutboxRoutes } from "./outbox.js";
 import { registerSourceRoutes } from "./source.js";
+import { registerDevelopmentRoutes } from "./development.js";
 
 export interface AppOptions {
   dataDir?: string;
@@ -42,6 +44,7 @@ export interface AppOptions {
   databaseUrl?: string;
   ollamaBaseUrl?: string;
   ollamaModel?: string;
+  ollamaDevelopmentModel?: string;
   ollamaEmbeddingModel?: string;
   databaseSchema?: string;
   queueSchema?: string;
@@ -220,6 +223,10 @@ export async function buildApp(
   });
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof DevelopmentError)
+      return reply
+        .code(error.statusCode)
+        .send({ error: { code: error.code, message: error.message } });
     if (error instanceof AuthError)
       return reply
         .code(error.statusCode)
@@ -376,6 +383,23 @@ export async function buildApp(
   );
 
   app.get("/v1/runtime", runtime);
+  registerDevelopmentRoutes(app, {
+    repository: () => {
+      if (!repository?.development)
+        throw new HttpError(
+          503,
+          "DEVELOPMENT_UNAVAILABLE",
+          "Development workflows require PostgreSQL and an isolated worker.",
+        );
+      return repository.development;
+    },
+    owner: (request) => owners.get(request),
+    models: () => discoverModels({ baseUrl: options.ollamaBaseUrl }),
+    defaultModel:
+      options.ollamaDevelopmentModel ?? options.ollamaModel ?? "qwen3.5:4b",
+    githubFetch: options.githubFetch,
+    now,
+  });
   registerOutboxRoutes(app, { listRuns, getRun });
   registerKnowledgeRoutes(app, {
     repository,

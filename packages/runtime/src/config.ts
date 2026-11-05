@@ -9,6 +9,7 @@ export function loadServerConfig(): {
   databaseUrl?: string;
   ollamaBaseUrl: string;
   ollamaModel?: string;
+  ollamaDevelopmentModel: string;
   ollamaEmbeddingModel: string;
   authRequired: boolean;
   publicUrl: string;
@@ -43,6 +44,10 @@ export function loadServerConfig(): {
         : process.env.DATABASE_URL,
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11435",
     ollamaModel: process.env.OLLAMA_MODEL ?? "qwen3.5:4b",
+    ollamaDevelopmentModel:
+      process.env.OLLAMA_DEVELOPMENT_MODEL ??
+      process.env.OLLAMA_MODEL ??
+      "qwen3.5:4b",
     ollamaEmbeddingModel:
       process.env.OLLAMA_EMBEDDING_MODEL ?? "embeddinggemma:300m",
     authRequired: process.env.VUZMI_DEV_NO_AUTH !== "1",

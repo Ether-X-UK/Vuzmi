@@ -29,6 +29,11 @@ import {
   githubKnowledgeMigration,
 } from "./knowledge.js";
 import type { KnowledgeEmbedder } from "./knowledge.js";
+import {
+  DEVELOPMENT_QUEUE,
+  DevelopmentRepository,
+  developmentMigration,
+} from "./development.js";
 
 export const GENERATION_QUEUE = "vuzmi-generate-release";
 export const GENERATION_RETRY_LIMIT = 2;
@@ -162,6 +167,7 @@ async function migrate(pool: Pool, schemaName: string): Promise<void> {
       { version: 1, sql: migration },
       { version: 2, sql: knowledgeMigration(schema) },
       { version: 3, sql: githubKnowledgeMigration(schema) },
+      { version: 4, sql: developmentMigration(schema) },
     ]) {
       const existing = await client.query<{ checksum: string }>(
         `SELECT checksum FROM ${schema}.schema_migrations WHERE version=$1`,
@@ -189,6 +195,7 @@ export class PostgresRunRepository {
   readonly schema: string;
   readonly queueSchema: string;
   readonly knowledge: KnowledgeRepository;
+  readonly development: DevelopmentRepository;
   private closed = false;
 
   private constructor(
@@ -201,6 +208,14 @@ export class PostgresRunRepository {
     this.schema = identifier(schema);
     this.queueSchema = identifier(queueSchema);
     this.knowledge = new KnowledgeRepository({
+      pool,
+      boss,
+      schema: this.schema,
+      queueSchema: this.queueSchema,
+      transaction: (operation, signal) => transaction(pool, operation, signal),
+      now,
+    });
+    this.development = new DevelopmentRepository({
       pool,
       boss,
       schema: this.schema,
@@ -252,6 +267,12 @@ export class PostgresRunRepository {
         retryDelay: 5,
         retryBackoff: true,
         expireInSeconds: 300,
+        heartbeatSeconds: 10,
+      });
+      await boss.createQueue(DEVELOPMENT_QUEUE, {
+        policy: "singleton",
+        retryLimit: 0,
+        expireInSeconds: 600,
         heartbeatSeconds: 10,
       });
       return new PostgresRunRepository(

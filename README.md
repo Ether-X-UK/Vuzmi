@@ -2,7 +2,7 @@
 
 A self-hosted business orchestration platform bringing agents, models, knowledge and operations into one control plane. Original project code is licensed under [AGPL-3.0-only](LICENSE).
 
-Vuzmi's larger direction is coordinated development, IT operations, support, marketing and sales with web/iOS clients and an open backend. The current private alpha foundation focuses on one reliable workflow: owned product knowledge → real local model draft → cited review → exact approval → durable local package. It does not autonomously implement, deploy, publish, contact customers or sell subscriptions.
+Vuzmi's larger direction is coordinated development, IT operations, support, marketing and sales with web/iOS clients and an open backend. The current private alpha turns owned product knowledge into a locally generated, cited and approved package. A separate development workflow now proposes a bounded code patch, runs isolated acceptance checks and requires exact review before saving it. Applying changes, deployment, publication, customer contact and billing remain separate capabilities.
 
 ## Start locally
 
@@ -25,6 +25,8 @@ Open [the web client](http://127.0.0.1:5173). First-run setup uses the private k
 In **Knowledge & memory**, add owned text/Markdown and wait for indexing. Create a **Local Ollama** mission with explicit evidence selections. Review the actual citations and document. Use **Revise draft** to correct its body with a recorded reason, then approve the exact saved revision. **Local outbox** downloads the approved Markdown with its hashes, provenance, retained evidence, revision history and decision record. Supplied claims and model output remain unverified.
 
 **Import from GitHub** previews one `.md`/`.txt` file from the public `Ether-X-UK/Vuzmi` repository. Enter its full lowercase 40-character commit, repository-relative path and local source title, inspect the exact normalized text, then choose **Save and index locally**. The imported snapshot is read-only and becomes selectable after indexing. Its commit, blob and raw/normalized hashes follow retrieved evidence into approved packages. An uncertain save can be retried with the same import identity. This initial connector needs outbound HTTPS to `api.github.com`, uses no credentials and has no private-repository or automatic-sync support. Unauthenticated GitHub rate limits are shared by the server's originating IP; errors show a cooldown and do not retry automatically.
+
+**Development** accepts a brief or optional public Vuzmi issue, pins one permitted source file and generates a local-model replacement. A dedicated offline container first reproduces the known bug, then checks the candidate. Only a complete passing result can reach exact human review and local package download. The first profile targets web401 session expiry at a fixed source revision; it does not accept arbitrary repositories, commands or dependencies. Provision the optional dedicated runtime and check image using [the runner instructions](docs/DEVELOPMENT_RUNNER.md), then run `npm run setup:development` and `npm run test:development-runner`. The document/knowledge workflows do not require this Docker VM. `OLLAMA_DEVELOPMENT_MODEL` explicitly selects the installed local development model without changing founder-document missions; there is no automatic model fallback.
 
 ```sh
 npm run check

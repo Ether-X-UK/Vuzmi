@@ -67,23 +67,32 @@ Changed or deleted knowledge fences an in-progress grounded draft. Failed re-ind
 
 Deleting a source removes active original text, revisions, chunks, vectors and source-linked memory. **Historical run excerpts, artifacts, downloaded copies and backups remain retained.** The UI discloses this boundary. This private-alpha operation is not a claim of total erasure.
 
+## Development patch workflow
+
+The separate **Development** page accepts a bounded brief and optional public Vuzmi issue number. Follow [DEVELOPMENT_RUNNER.md](DEVELOPMENT_RUNNER.md) to create a dedicated runtime and provision its fixed image with `npm run setup:development`. That explicit setup downloads public image/dependency bytes; candidate checks run offline without host mounts or credentials. Missing runner/model readiness blocks admission.
+
+The first profile pins one historical Vuzmi revision and permits only `apps/web/src/api.ts`. A fresh baseline must reproduce the two expected401 failures; the generated candidate must pass all six sealed checks. Failed syntax, incomplete output, timeout, OOM or unavailable evidence stays visible and cannot be approved. Inspect the full diff, exact source/profile/model identities and observed logs, open the exact review payload, then acknowledge its revision before approving or rejecting. Approval saves the reviewed JSON package locally; applying its patch remains a separate step. The package includes baseline/candidate receipts and authenticated decision history. This is functional test evidence for an owned repository, not proof that arbitrary generated code is safe.
+
+Set `OLLAMA_DEVELOPMENT_MODEL` to an explicitly installed local model when needed. Unset, it uses `OLLAMA_MODEL` or `qwen3.5:4b`; changing it affects new tasks only. Initial4B attempts were correctly blocked on invalid TypeScript, demonstrating that model output alone is insufficient. No automatic retry or alternative provider is used.
+
 ## Configuration and storage
 
 API/worker load root `.env`, then generated `.data/dev/database.env`; explicitly exported environment variables win. Private files must be 0600 within 0700 directories. Never commit `.env`, `.data`, database dumps, signing secrets, setup keys, cookies or passwords. Examples contain placeholders only.
 
-| Variable                  | Purpose                                                                                                                                 |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`            | Shared PostgreSQL URL; generated locally if absent.                                                                                     |
-| `OLLAMA_BASE_URL`         | Local HTTP endpoint; default `http://127.0.0.1:11435`. Remote, redirecting, credential-bearing and path-bearing endpoints are rejected. |
-| `OLLAMA_MODEL`            | Default generation model, `qwen3.5:4b`. No automatic pull/substitution.                                                                 |
-| `OLLAMA_EMBEDDING_MODEL`  | `embeddinggemma:300m`; must match the pinned workspace profile.                                                                         |
-| `BETTER_AUTH_SECRET`      | Strong server-only signing secret; otherwise `.data/dev/auth-secret`.                                                                   |
-| `VUZMI_OWNER_SETUP_KEY`   | Private bootstrap key; otherwise `.data/dev/owner-setup-key`.                                                                           |
-| `VUZMI_PUBLIC_URL`        | Exact same-origin auth URL; development defaults to 5173, `npm start` to its API port. HTTP is loopback-only.                           |
-| `PORT`                    | API loopback port, default 4310. Vite development proxy uses4310.                                                                       |
-| `VUZMI_DEV_NO_AUTH=1`     | Explicit loopback testing bypass; never a deployment default.                                                                           |
-| `VUZMI_SIMULATION_ONLY=1` | Separate file adapter with no live generation.                                                                                          |
-| `VUZMI_DATA_DIR`          | Private simulation-state directory, default ignored `.data`.                                                                            |
+| Variable                   | Purpose                                                                                                                                 |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`             | Shared PostgreSQL URL; generated locally if absent.                                                                                     |
+| `OLLAMA_BASE_URL`          | Local HTTP endpoint; default `http://127.0.0.1:11435`. Remote, redirecting, credential-bearing and path-bearing endpoints are rejected. |
+| `OLLAMA_MODEL`             | Default generation model, `qwen3.5:4b`. No automatic pull/substitution.                                                                 |
+| `OLLAMA_DEVELOPMENT_MODEL` | Installed local development model; defaults to `OLLAMA_MODEL` or `qwen3.5:4b`. Existing tasks retain their selected model.              |
+| `OLLAMA_EMBEDDING_MODEL`   | `embeddinggemma:300m`; must match the pinned workspace profile.                                                                         |
+| `BETTER_AUTH_SECRET`       | Strong server-only signing secret; otherwise `.data/dev/auth-secret`.                                                                   |
+| `VUZMI_OWNER_SETUP_KEY`    | Private bootstrap key; otherwise `.data/dev/owner-setup-key`.                                                                           |
+| `VUZMI_PUBLIC_URL`         | Exact same-origin auth URL; development defaults to 5173, `npm start` to its API port. HTTP is loopback-only.                           |
+| `PORT`                     | API loopback port, default 4310. Vite development proxy uses4310.                                                                       |
+| `VUZMI_DEV_NO_AUTH=1`      | Explicit loopback testing bypass; never a deployment default.                                                                           |
+| `VUZMI_SIMULATION_ONLY=1`  | Separate file adapter with no live generation.                                                                                          |
+| `VUZMI_DATA_DIR`           | Private simulation-state directory, default ignored `.data`.                                                                            |
 
 A custom Ollama daemon is operator-managed: start it with `OLLAMA_NO_CLOUD=1`. Discovery checks local metadata/digest; it cannot prevent an operator replacing a model concurrently. The owned daemon is the default. OpenAI/Claude contracts require an explicit injected transport and remote-execution opt-in; no application route or environment toggle enables paid calls. They are fixture-tested, not live-verified. Subscription sign-in integration remains separate and unconfigured.
 

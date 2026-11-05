@@ -38,6 +38,7 @@ import { runtimeBlockReason } from "./runtime";
 import { RuntimeView } from "./RuntimeView";
 import { KnowledgeView } from "./KnowledgeView";
 import { OutboxView } from "./OutboxView";
+import { DevelopmentView } from "./DevelopmentView";
 const ArtifactDocument = lazy(() =>
   import("./ArtifactDocument").then((module) => ({
     default: module.ArtifactDocument,
@@ -65,8 +66,9 @@ import {
 } from "./proposalReview";
 
 type Route = {
-  page: "command" | "runs" | "approvals" | "outbox" | "roadmap";
+  page: "command" | "runs" | "approvals" | "outbox" | "roadmap" | "development";
   runId?: string;
+  developmentId?: string;
   section?: string;
 };
 const domains = Object.keys(domainLabels) as Domain[];
@@ -94,6 +96,16 @@ function readRoute(): Route {
     }
   }
   if (parts[0] === "outbox") return { page: "outbox" };
+  if (parts[0] === "development") {
+    try {
+      return {
+        page: "development",
+        developmentId: parts[1] ? decodeURIComponent(parts[1]) : undefined,
+      };
+    } catch {
+      return { page: "development" };
+    }
+  }
   if (parts[0] === "approvals") return { page: "approvals" };
   if (parts[0] === "roadmap")
     return { page: "roadmap", section: parts[1] ?? "foundation" };
@@ -379,7 +391,7 @@ export function App({
 
         <main
           id="main-content"
-          className={`main-content ${route.runId ? "detail-content" : ""}`}
+          className={`main-content ${route.runId || route.developmentId ? "detail-content" : ""}`}
           tabIndex={-1}
         >
           {connectionError && (
@@ -420,6 +432,11 @@ export function App({
                   Reconnect
                 </button>
               }
+            />
+          ) : route.page === "development" ? (
+            <DevelopmentView
+              key={owner?.id ?? "no-owner"}
+              runId={route.developmentId}
             />
           ) : route.runId ? (
             selectedRun ? (
@@ -505,6 +522,13 @@ export function App({
           active={route.page === "runs"}
         />
         <MobileLink
+          href="#/development"
+          name="build"
+          label="Develop"
+          ariaLabel="Development"
+          active={route.page === "development"}
+        />
+        <MobileLink
           href="#/approvals"
           name="check"
           label="Approvals"
@@ -563,6 +587,12 @@ function Sidebar({
   }[] = [
     { label: "Command", icon: "command", href: "#/", page: "command" },
     { label: "Runs", icon: "runs", href: "#/runs", page: "runs" },
+    {
+      label: "Development",
+      icon: "build",
+      href: "#/development",
+      page: "development",
+    },
     {
       label: "Local outbox",
       icon: "download",

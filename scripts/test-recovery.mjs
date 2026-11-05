@@ -15,7 +15,14 @@ import {
   PostgresRunRepository,
   processIndexJob,
   processRunJob,
+  processDevelopmentJob,
 } from "../packages/runtime/src/index.ts";
+import {
+  developmentFixtureInput,
+  developmentFixturePatch,
+  developmentFixtureProfile,
+  developmentFixtureRunner,
+} from "../packages/runtime/test/development-fixtures.ts";
 import { backupDatabase, RecoveryError } from "./backup.mjs";
 import { inspectBundle, restoreDatabase } from "./restore.mjs";
 import { startPostgres, stopPostgres } from "./dev-services.mjs";
@@ -232,6 +239,73 @@ try {
     source.id,
   );
   const expectedMemory = await repository.knowledge.listMemories();
+  stage = "synthetic approved and interrupted development fixtures";
+  const developmentWorkerId = randomUUID();
+  await repository.development.heartbeat(developmentWorkerId, {
+    ready: true,
+    reason: "Synthetic recovery fixture; no container executed.",
+    profile: developmentFixtureProfile,
+  });
+  const development = (
+    await repository.development.create(developmentFixtureInput(), {
+      id: randomUUID(),
+      actor: owner.id,
+      profile: developmentFixtureProfile,
+    })
+  ).run;
+  await processDevelopmentJob({
+    repository,
+    workerId: developmentWorkerId,
+    runner: developmentFixtureRunner(),
+    generate: async () => ({
+      patch: developmentFixturePatch,
+      usage: { inputTokens: null, outputTokens: null, durationMs: null },
+      modelDigest: "synthetic-recovery-model",
+    }),
+    job: { data: { workspaceId: "local-workspace", runId: development.id } },
+  });
+  const developmentWaiting = await repository.development.get(
+    "local-workspace",
+    development.id,
+  );
+  const expectedDevelopment = await repository.development.decide(
+    "local-workspace",
+    development.id,
+    {
+      decision: "approve",
+      revision: developmentWaiting.revision,
+      fingerprint: developmentWaiting.reviewFingerprint,
+    },
+    { id: owner.id, name: owner.name },
+  );
+  const expectedDevelopmentPackage = await repository.development.package(
+    "local-workspace",
+    development.id,
+  );
+  const interruptedDevelopment = (
+    await repository.development.create(developmentFixtureInput(), {
+      id: randomUUID(),
+      actor: owner.id,
+      profile: developmentFixtureProfile,
+    })
+  ).run;
+  const interruptedAttempt = await repository.development.claim(
+    "local-workspace",
+    interruptedDevelopment.id,
+    developmentWorkerId,
+    randomUUID(),
+  );
+  await repository.development.reserveExecution(
+    "local-workspace",
+    interruptedDevelopment.id,
+    {
+      workerId: developmentWorkerId,
+      attemptId: interruptedAttempt.attemptId,
+      revision: interruptedAttempt.revision,
+    },
+    "baseline",
+    `vuzmi-dev-${interruptedDevelopment.id}-${interruptedAttempt.attemptId}-baseline`,
+  );
   const sourceSql = await database(sourceUrl);
   const expectedEvents = (
     await sourceSql.query(
@@ -356,7 +430,13 @@ try {
     (
       await targetSql.query(
         "SELECT count(*)::int count FROM vuzmi_queue.job WHERE name=ANY($1::text[]) AND state IN ('created','retry','active')",
-        [["vuzmi-generate-release", "vuzmi-index-source"]],
+        [
+          [
+            "vuzmi-generate-release",
+            "vuzmi-index-source",
+            "vuzmi-development-patch",
+          ],
+        ],
       )
     ).rows[0].count,
     0,
@@ -373,6 +453,53 @@ try {
     connectionString: targetUrl,
   });
   services.push(restoredRepository);
+  assert.equal(
+    (
+      await targetSql.query(
+        "SELECT count(*)::integer count FROM vuzmi.development_runtime",
+      )
+    ).rows[0].count,
+    0,
+  );
+  assert.equal(
+    (
+      await targetSql.query(
+        "SELECT count(*)::integer count FROM vuzmi.development_attempts WHERE state IN ('active','recovering')",
+      )
+    ).rows[0].count,
+    0,
+  );
+  assert.equal((await restoredRepository.development.runtime()).ready, false);
+  assert.deepEqual(
+    await restoredRepository.development.get("local-workspace", development.id),
+    expectedDevelopment,
+  );
+  assert.deepEqual(
+    await restoredRepository.development.package(
+      "local-workspace",
+      development.id,
+    ),
+    expectedDevelopmentPackage,
+  );
+  let restoredCleanupCalls = 0;
+  await restoredRepository.development.reconcile(randomUUID(), async () => {
+    restoredCleanupCalls++;
+    return true;
+  });
+  assert.equal(
+    restoredCleanupCalls,
+    0,
+    "a restored target cannot claim ownership of original-host execution resources",
+  );
+  assert.equal(
+    (
+      await restoredRepository.development.get(
+        "local-workspace",
+        interruptedDevelopment.id,
+      )
+    ).status,
+    "failed",
+  );
   assert.deepEqual(
     await restoredRepository.get("local-workspace", run.id),
     expectedRun,
@@ -438,7 +565,7 @@ try {
     expectedRun,
   );
   console.info(
-    "Recovery drill passed: isolated native dump/restore, permission/checksum/empty-target guards, source/memory/vectors, GitHub origin/import receipt replay, exact run/artifact/fingerprint/revision/events and human revision history/package, owner/session binding, session revocation, and pending-job quarantine.",
+    "Recovery drill passed: isolated native dump/restore, permission/checksum/empty-target guards, source/memory/vectors, GitHub origin/import receipt replay, exact run/artifact/fingerprint/revision/events and human revision history/package, exact development package and interrupted-attempt/runtime quarantine, owner/session binding, session revocation, and pending-job quarantine.",
   );
   console.info(
     "Only disposable clusters and synthetic fixtures were used. No operator database, model, or cloud service was contacted.",
