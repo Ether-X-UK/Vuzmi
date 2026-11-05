@@ -4,6 +4,7 @@ import {
   evidenceSnapshotSchema,
 } from "./knowledge.js";
 import { founderReleaseWorkflowRef, workflowRefSchema } from "./workflow.js";
+import { extractDraftBody } from "./document.js";
 import {
   draftRevisionSchema,
   validateDraftRevisionIntegrity,
@@ -176,7 +177,9 @@ export type RuntimeInfo = z.infer<typeof runtimeInfoSchema>;
 export class DomainError extends Error {
   constructor(
     public readonly code:
-      "STALE_APPROVAL" | "ALREADY_DECIDED" | "INVALID_STATE",
+      | "STALE_APPROVAL"
+      | "ALREADY_DECIDED"
+      | "INVALID_STATE",
     message: string,
   ) {
     super(message);
@@ -620,6 +623,23 @@ export function parseRunIntegrity(
     );
   if (proposal) {
     const { kind, destination, content } = proposal;
+    // Canonical reference records bind retained provenance as well as excerpts.
+    // Legacy arbitrary fixture documents remain readable; real wrapped documents
+    // must still match their exact application-owned appendix.
+    if (
+      run.evidence &&
+      (run.evidence.items.some((item) => item.origin) ||
+        content.startsWith("> Local Ollama draft — unverified.") ||
+        content.startsWith("> Human-revised draft — unverified.")) &&
+      extractDraftBody(
+        content,
+        run.evidence,
+        run.draftRevisions?.length ? "human" : "model",
+      ) === undefined
+    )
+      throw new Error(
+        "The retained evidence differs from its document reference record.",
+      );
     if (
       proposal.fingerprint !==
       fingerprint(JSON.stringify({ kind, destination, content }))
@@ -667,3 +687,5 @@ export function parseRunIntegrity(
   validateDraftRevisionIntegrity(run, fingerprint);
   return run;
 }
+
+export * from "./github.js";

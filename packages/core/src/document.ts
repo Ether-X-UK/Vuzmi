@@ -72,6 +72,7 @@ function references(evidence: EvidenceSnapshot): string {
         lineEnd: item.lineEnd,
         contentHash: item.contentHash,
         excerpt: item.text,
+        ...(item.origin ? { origin: item.origin } : {}),
       }),
     );
   }

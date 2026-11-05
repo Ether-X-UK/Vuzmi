@@ -26,6 +26,7 @@ import {
   INDEX_QUEUE,
   KnowledgeRepository,
   knowledgeMigration,
+  githubKnowledgeMigration,
 } from "./knowledge.js";
 import type { KnowledgeEmbedder } from "./knowledge.js";
 
@@ -160,6 +161,7 @@ async function migrate(pool: Pool, schemaName: string): Promise<void> {
     for (const item of [
       { version: 1, sql: migration },
       { version: 2, sql: knowledgeMigration(schema) },
+      { version: 3, sql: githubKnowledgeMigration(schema) },
     ]) {
       const existing = await client.query<{ checksum: string }>(
         `SELECT checksum FROM ${schema}.schema_migrations WHERE version=$1`,

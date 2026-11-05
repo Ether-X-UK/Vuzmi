@@ -24,6 +24,8 @@ Open [the web client](http://127.0.0.1:5173). First-run setup uses the private k
 
 In **Knowledge & memory**, add owned text/Markdown and wait for indexing. Create a **Local Ollama** mission with explicit evidence selections. Review the actual citations and document. Use **Revise draft** to correct its body with a recorded reason, then approve the exact saved revision. **Local outbox** downloads the approved Markdown with its hashes, provenance, retained evidence, revision history and decision record. Supplied claims and model output remain unverified.
 
+**Import from GitHub** previews one `.md`/`.txt` file from the public `Ether-X-UK/Vuzmi` repository. Enter its full lowercase 40-character commit, repository-relative path and local source title, inspect the exact normalized text, then choose **Save and index locally**. The imported snapshot is read-only and becomes selectable after indexing. Its commit, blob and raw/normalized hashes follow retrieved evidence into approved packages. An uncertain save can be retried with the same import identity. This initial connector needs outbound HTTPS to `api.github.com`, uses no credentials and has no private-repository or automatic-sync support. Unauthenticated GitHub rate limits are shared by the server's originating IP; errors show a cooldown and do not retry automatically.
+
 ```sh
 npm run check
 npm run test:postgres
@@ -43,6 +45,6 @@ npm start
 - [Development](docs/DEVELOPMENT.md), [recovery](docs/RECOVERY.md), [licensing](docs/LICENSING.md) and [research](docs/RESEARCH.md).
 - [Infrastructure request](docs/INFRASTRUCTURE_REQUEST.md): posted as [infrastructure issue #310](https://github.com/XeoNote/Infrastructure-/issues/310) for private evaluation on existing hardware.
 
-OpenAI and Claude adapters are contract-tested and disabled, with no live calls. Public SaaS, multi-tenant isolation, billing, external connectors, automated operations and selling remain later milestones. Source deletion removes active retrieval data; historical evidence, approved packages and backups remain retained under the disclosed private-alpha boundary.
+OpenAI and Claude adapters are contract-tested and disabled, with no live calls. Public SaaS, multi-tenant isolation, billing, additional connectors, automated operations and selling remain later milestones. Source deletion removes active retrieval data; historical evidence, approved packages and backups remain retained under the disclosed private-alpha boundary.
 
 The source is public at [Ether-X-UK/Vuzmi](https://github.com/Ether-X-UK/Vuzmi), published with founder authorization on 5 November 2026 under AGPL-3.0-only. [Infrastructure issue #310](https://github.com/XeoNote/Infrastructure-/issues/310) requests a private evaluation target. Keep this evaluation on loopback until the private-ingress and operational release gates pass. Repository publication does not deploy the application or change DNS.

@@ -33,6 +33,8 @@ import {
   validSelection,
 } from "./Evidence";
 import { Icon } from "./icons";
+import { GithubImport } from "./GithubImport";
+import { GithubProvenance } from "./GithubOrigin";
 
 function message(error: unknown): string {
   return error instanceof Error
@@ -73,6 +75,18 @@ export function KnowledgeView({
   onRefresh: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<"sources" | "retrieval" | "memory">("sources");
+  const [githubOpen, setGithubOpen] = useState(false);
+  const mounted = useRef(true);
+  const sourceRequest = useRef(0);
+  const sourceView = useRef(tab);
+  sourceView.current = tab;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      sourceRequest.current += 1;
+    };
+  }, []);
   const [preview, setPreview] = useState<SourceDetail | null>(null);
   const [sourceEditor, setSourceEditor] = useState<{
     detail?: SourceDetail;
@@ -83,7 +97,9 @@ export function KnowledgeView({
   const [deletion, setDeletion] = useState<
     { kind: "source"; item: Source } | { kind: "memory"; item: Memory } | null
   >(null);
-  const [busy, setBusy] = useState(false);
+  const [operationBusy, setBusy] = useState(false);
+  const [sourceBusy, setSourceBusy] = useState(false);
+  const busy = operationBusy || sourceBusy;
   const [operationError, setOperationError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<EvidenceSelection>({
@@ -111,16 +127,30 @@ export function KnowledgeView({
     void onRefresh();
   };
   const openSource = async (source: Source, edit = false) => {
-    setBusy(true);
+    const request = ++sourceRequest.current;
+    const startedView = sourceView.current;
+    setSourceBusy(true);
     setOperationError(null);
     try {
       const detail = await getSource(source.id);
-      if (edit) setSourceEditor({ detail });
+      if (
+        !mounted.current ||
+        request !== sourceRequest.current ||
+        startedView !== sourceView.current
+      )
+        return;
+      if (edit && !detail.source.origin) setSourceEditor({ detail });
       else setPreview(detail);
     } catch (caught) {
-      setOperationError(message(caught));
+      if (
+        mounted.current &&
+        request === sourceRequest.current &&
+        startedView === sourceView.current
+      )
+        setOperationError(message(caught));
     } finally {
-      setBusy(false);
+      if (mounted.current && request === sourceRequest.current)
+        setSourceBusy(false);
     }
   };
   const remove = async () => {
@@ -236,7 +266,10 @@ export function KnowledgeView({
             aria-pressed={tab === value}
             className={tab === value ? "active" : ""}
             onClick={() => {
+              sourceRequest.current += 1;
+              setSourceBusy(false);
               setTab(value);
+              setGithubOpen(false);
               setOperationError(null);
             }}
           >
@@ -279,15 +312,36 @@ export function KnowledgeView({
               </div>
               <h2>Knowledge sources</h2>
             </div>
-            <button
-              className="button button-primary"
-              disabled={busy}
-              onClick={() => setSourceEditor({})}
-            >
-              <Icon name="plus" size={17} />
-              Add source
-            </button>
+            <div className="knowledge-item-actions">
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={busy}
+                aria-expanded={githubOpen}
+                onClick={() => setGithubOpen((open) => !open)}
+              >
+                Import from GitHub
+              </button>
+              <button
+                className="button button-primary"
+                disabled={busy}
+                onClick={() => setSourceEditor({})}
+              >
+                <Icon name="plus" size={17} />
+                Add source
+              </button>
+            </div>
           </div>
+          {githubOpen && (
+            <GithubImport
+              sources={snapshot.sources}
+              onClose={() => setGithubOpen(false)}
+              onImported={() => changed()}
+              onViewSource={(source) => {
+                void openSource(source);
+              }}
+            />
+          )}
           <div className="knowledge-runtime-strip">
             <Icon
               name={snapshot.embedding.available ? "check" : "alert"}
@@ -331,6 +385,15 @@ export function KnowledgeView({
                           : "Plain text"}{" "}
                         · Revision {source.revision} · {source.chunkCount}{" "}
                         passages
+                        {source.origin && (
+                          <>
+                            {" "}
+                            ·{" "}
+                            <span className="github-origin-badge">
+                              GitHub snapshot
+                            </span>
+                          </>
+                        )}
                       </p>
                     </div>
                     <span className={`source-state source-${source.status}`}>
@@ -350,15 +413,17 @@ export function KnowledgeView({
                       Updated {date(source.updatedAt)}
                     </p>
                     <div>
-                      <button
-                        className="button button-small button-secondary"
-                        disabled={busy}
-                        onClick={() => {
-                          void openSource(source, true);
-                        }}
-                      >
-                        Edit
-                      </button>
+                      {!source.origin && (
+                        <button
+                          className="button button-small button-secondary"
+                          disabled={busy}
+                          onClick={() => {
+                            void openSource(source, true);
+                          }}
+                        >
+                          Edit
+                        </button>
+                      )}
                       <button
                         className="button button-small button-quiet"
                         disabled={busy}
@@ -546,17 +611,28 @@ export function KnowledgeView({
             Revision {preview.source.revision} · {preview.source.status} ·
             Searchable revision {preview.source.activeRevision ?? "none"}
           </p>
+          {preview.source.origin && (
+            <>
+              <GithubProvenance origin={preview.source.origin} />
+              <p className="knowledge-hint">
+                This imported snapshot is read-only. Import another commit
+                explicitly to create a separate source.
+              </p>
+            </>
+          )}
           <pre className="source-text-preview">{preview.text}</pre>
           <div className="dialog-footer">
-            <button
-              className="button button-secondary"
-              onClick={() => {
-                setSourceEditor({ detail: preview });
-                setPreview(null);
-              }}
-            >
-              Edit source
-            </button>
+            {!preview.source.origin && (
+              <button
+                className="button button-secondary"
+                onClick={() => {
+                  setSourceEditor({ detail: preview });
+                  setPreview(null);
+                }}
+              >
+                Edit source
+              </button>
+            )}
             <button
               className="button button-quiet"
               onClick={() => {

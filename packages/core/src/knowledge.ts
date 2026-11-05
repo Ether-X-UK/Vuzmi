@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { githubOriginSchema } from "./github.js";
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const timestamp = z.string().datetime();
@@ -39,6 +40,7 @@ export const sourceUpdateSchema = z
   );
 export type SourceUpdate = z.infer<typeof sourceUpdateSchema>;
 export const sourceSchema = z.object({
+  origin: githubOriginSchema.optional(),
   id: z.string().uuid(),
   workspaceId: z.literal("local-workspace"),
   title: z.string(),
@@ -124,6 +126,7 @@ export const evidenceSelectionSchema = z
   );
 export type EvidenceSelection = z.infer<typeof evidenceSelectionSchema>;
 export const evidenceItemSchema = z.object({
+  origin: githubOriginSchema.optional(),
   citation: z.string().regex(/^[SM][1-9][0-9]*$/),
   kind: z.enum(["source", "memory"]),
   ownerId: z.string().uuid(),

@@ -51,6 +51,7 @@ export interface AppOptions {
   auth?: AuthService;
   authBaseUrl?: string;
   webRoot?: string;
+  githubFetch?: typeof globalThis.fetch;
 }
 
 const allowedHost = /^(localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/i;
@@ -382,6 +383,9 @@ export async function buildApp(
     ollamaEmbeddingModel: options.ollamaEmbeddingModel,
     discoverProfile: options.discoverProfile,
     embed: options.embedKnowledge,
+    githubFetch: options.githubFetch,
+    ownerId: (request) => owners.get(request)?.id,
+    now,
   });
   app.get("/v1/runs", async () => ({ runs: await listRuns() }));
 

@@ -4914,6 +4914,191 @@ code {
   font-size: 15px;
   font-weight: 500;
 }
+
+.github-import-panel {
+  margin: 18px 0 26px;
+  padding: 26px;
+  border: 1px solid #426458;
+  border-radius: 10px;
+  background: #112021;
+  min-width: 0;
+}
+.github-import-heading,
+.github-preview-title,
+.github-provenance-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.github-import-heading h2 {
+  margin: 9px 0 0;
+  color: #e0eae0;
+  font-size: 25px;
+  font-weight: 500;
+  letter-spacing: -0.5px;
+}
+.github-import-intro {
+  margin: 20px 0;
+  color: #a9c0b3;
+  font-size: 15px;
+  line-height: 1.8;
+}
+.github-import-intro strong {
+  color: #cbded1;
+  font-weight: 500;
+}
+.github-import-form {
+  max-width: 720px;
+}
+.github-import-form input {
+  display: block;
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 14px;
+  color: #d4e4d8;
+  border: 1px solid #3b5751;
+  border-radius: 6px;
+  background: #0a171b;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.github-import-form input:focus-visible {
+  outline: 2px solid #49dbc0;
+  outline-offset: 3px;
+}
+.github-import-help {
+  margin-top: 12px;
+}
+.github-import-help summary,
+.github-preview-identity summary,
+.github-provenance summary {
+  color: #b2cdbd;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.github-import-help p,
+.github-provenance > p {
+  color: #91ad9f;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.github-file-preview {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid #3e5650;
+}
+.github-preview-title h3 {
+  margin: 0;
+  color: #d9e9dc;
+  font-size: 19px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.github-origin-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid #45635a;
+  border-radius: 5px;
+  color: #abd3bb;
+  background: #1b3027;
+  font-size: 12px;
+  line-height: 1.6;
+  font-weight: 400;
+}
+.github-provenance {
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid #344d49;
+  border-radius: 7px;
+  background: #0c191c;
+  min-width: 0;
+}
+.github-provenance-heading a {
+  color: #8ed9bf;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.github-provenance dl,
+.github-preview-identity dl {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+}
+.github-provenance dl > div,
+.github-preview-identity dl > div {
+  display: grid;
+  grid-template-columns: 125px minmax(0, 1fr);
+  gap: 14px;
+}
+.github-provenance dt,
+.github-preview-identity dt {
+  color: #91b0a0;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.github-provenance dd,
+.github-preview-identity dd {
+  margin: 0;
+  color: #c0d6c8;
+  font-size: 13px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.github-provenance code,
+.github-preview-identity code {
+  font: 12px/1.8 var(--mono);
+  overflow-wrap: anywhere;
+}
+.github-provenance details {
+  border-top: 1px solid #2e4641;
+  padding-top: 13px;
+}
+.github-preview-identity {
+  margin: 18px 0;
+}
+.github-preview-expired {
+  margin: 18px 0;
+  color: #e1c68b;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.github-import-success {
+  margin-top: 26px;
+  padding: 21px;
+  border: 1px solid #486f51;
+  border-radius: 7px;
+  background: #172c21;
+  color: #c8dfc8;
+  font-size: 15px;
+  line-height: 1.8;
+}
+.github-import-success p {
+  margin: 13px 0 18px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .github-import-panel {
+    padding: 20px 15px;
+  }
+  .github-import-heading h2 {
+    font-size: 22px;
+  }
+  .github-provenance {
+    padding: 15px;
+  }
+  .github-provenance dl > div,
+  .github-preview-identity dl > div {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+  .github-import-panel .button {
+    white-space: normal;
+  }
+}
 .draft-validation {
   color: #efb5a6;
 }

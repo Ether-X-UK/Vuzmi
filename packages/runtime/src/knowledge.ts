@@ -5,6 +5,10 @@ import {
   embeddingProfileSchema,
   evidenceSelectionSchema,
   evidenceSnapshotSchema,
+  githubImportInputSchema,
+  githubOriginSchema,
+  githubPreviewSchema,
+  githubPreviewFingerprintInput,
   memoryInputSchema,
   memorySchema,
   memoryUpdateSchema,
@@ -17,6 +21,8 @@ import type {
   EvidenceItem,
   EvidenceSelection,
   EvidenceSnapshot,
+  GithubImportInput,
+  GithubPreview,
   Memory,
   MemoryInput,
   MemoryUpdate,
@@ -109,6 +115,19 @@ export function knowledgeMigration(schema: string): string {
       workspace_id text NOT NULL, run_id text NOT NULL, pins jsonb NOT NULL,
       PRIMARY KEY(workspace_id,run_id),
       FOREIGN KEY(workspace_id,run_id) REFERENCES ${schema}.runs(workspace_id,id)
+    );
+  `;
+}
+
+export function githubKnowledgeMigration(schema: string): string {
+  return `
+    ALTER TABLE ${schema}.source_revisions ADD COLUMN origin jsonb;
+    CREATE TABLE ${schema}.github_import_receipts (
+      workspace_id text NOT NULL, import_id uuid NOT NULL, preview_id uuid NOT NULL,
+      fingerprint text NOT NULL CHECK (fingerprint ~ '^[a-f0-9]{64}$'),
+      source_id uuid NOT NULL, created_at timestamptz NOT NULL,
+      PRIMARY KEY(workspace_id,import_id),
+      FOREIGN KEY(workspace_id,source_id) REFERENCES ${schema}.knowledge_sources(workspace_id,id)
     );
   `;
 }
@@ -279,15 +298,21 @@ export class KnowledgeRepository {
     const result = await this.options.pool.query<{
       metadata: unknown;
       body: string;
+      origin: unknown | null;
     }>(
-      `SELECT s.metadata,r.body FROM ${this.schema}.knowledge_sources s
+      `SELECT s.metadata,r.body,r.origin FROM ${this.schema}.knowledge_sources s
       JOIN ${this.schema}.source_revisions r ON r.workspace_id=s.workspace_id AND r.source_id=s.id AND r.revision=s.revision
       WHERE s.workspace_id=$1 AND s.id=$2 AND s.deleted_at IS NULL`,
       [workspaceId, id],
     );
     return result.rows[0]
       ? {
-          source: sourceSchema.parse(result.rows[0].metadata),
+          source: {
+            ...sourceSchema.parse(result.rows[0].metadata),
+            ...(result.rows[0].origin
+              ? { origin: githubOriginSchema.parse(result.rows[0].origin) }
+              : {}),
+          },
           text: result.rows[0].body,
         }
       : undefined;
@@ -323,6 +348,133 @@ export class KnowledgeRepository {
     });
     return source;
   }
+  async getGithubImport(
+    workspaceId: string,
+    input: GithubImportInput,
+  ): Promise<Source | undefined> {
+    local(workspaceId);
+    const value = parse(githubImportInputSchema, input);
+    return this.options.transaction((client) =>
+      this.findGithubImport(client, workspaceId, value),
+    );
+  }
+  async importGithubSource(
+    workspaceId: string,
+    input: GithubImportInput,
+    previewInput: GithubPreview,
+  ): Promise<{ source: Source; replayed: boolean }> {
+    local(workspaceId);
+    const value = parse(githubImportInputSchema, input);
+    return this.options.transaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        `vuzmi:github-import:${workspaceId}:${value.importId}`,
+      ]);
+      const replay = await this.findGithubImport(client, workspaceId, value);
+      if (replay) return { source: replay, replayed: true };
+      const preview = parse(githubPreviewSchema, previewInput);
+      const text = this.normalize(preview.text);
+      const normalizedBytes = Buffer.byteLength(text, "utf8");
+      const envelope = githubPreviewFingerprintInput(preview);
+      if (
+        preview.previewId !== value.previewId ||
+        preview.fingerprint !== value.fingerprint ||
+        hash(envelope) !== preview.fingerprint ||
+        text !== preview.text ||
+        Buffer.from(text, "utf8").toString("utf8") !== text ||
+        /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text) ||
+        normalizedBytes !== preview.origin.normalizedBytes ||
+        hash(text) !== preview.origin.normalizedSha256 ||
+        preview.format !==
+          (/\.md$/i.test(preview.origin.path) ? "markdown" : "text")
+      )
+        throw new KnowledgeError(
+          "GITHUB_PREVIEW_MISMATCH",
+          "The GitHub preview no longer matches its reviewed text and provenance. Preview the file again.",
+        );
+      parse(sourceInputSchema, {
+        title: preview.title,
+        format: preview.format,
+        text,
+      });
+      const now = this.options.now().toISOString();
+      if (new Date(preview.expiresAt).getTime() <= this.options.now().getTime())
+        throw new KnowledgeError(
+          "GITHUB_PREVIEW_EXPIRED",
+          "The GitHub preview expired. Preview the file again.",
+        );
+      const source: Source = {
+        id: randomUUID(),
+        workspaceId: workspace,
+        title: preview.title,
+        format: preview.format,
+        revision: 1,
+        activeRevision: null,
+        status: "queued",
+        contentHash: hash(text),
+        chunkCount: 0,
+        profile: null,
+        parserVersion: "plain-text-v1",
+        chunkerVersion: "utf8-lines-v1",
+        createdAt: now,
+        updatedAt: now,
+        error: null,
+        origin: preview.origin,
+      };
+      await client.query(
+        `INSERT INTO ${this.schema}.knowledge_sources(workspace_id,id,revision,metadata) VALUES($1,$2,$3,$4::jsonb)`,
+        [workspaceId, source.id, 1, JSON.stringify(source)],
+      );
+      await this.insertRevision(client, source, text);
+      await client.query(
+        `INSERT INTO ${this.schema}.github_import_receipts(workspace_id,import_id,preview_id,fingerprint,source_id,created_at) VALUES($1,$2,$3,$4,$5,$6)`,
+        [
+          workspaceId,
+          value.importId,
+          value.previewId,
+          value.fingerprint,
+          source.id,
+          now,
+        ],
+      );
+      return { source, replayed: false };
+    });
+  }
+  private async findGithubImport(
+    client: PoolClient,
+    workspaceId: string,
+    input: GithubImportInput,
+  ): Promise<Source | undefined> {
+    const result = await client.query<{
+      preview_id: string;
+      fingerprint: string;
+      source_id: string;
+    }>(
+      `SELECT preview_id,fingerprint,source_id FROM ${this.schema}.github_import_receipts WHERE workspace_id=$1 AND import_id=$2`,
+      [workspaceId, input.importId],
+    );
+    const receipt = result.rows[0];
+    if (!receipt) return undefined;
+    if (
+      receipt.preview_id !== input.previewId ||
+      receipt.fingerprint !== input.fingerprint
+    )
+      throw new KnowledgeError(
+        "GITHUB_IMPORT_CONFLICT",
+        "This import ID already belongs to a different reviewed preview.",
+      );
+    const source = await this.lockSource(
+      client,
+      workspaceId,
+      receipt.source_id,
+      "SHARE",
+    );
+    if (!source)
+      throw new KnowledgeError(
+        "GITHUB_IMPORT_DELETED",
+        "This imported source was deleted. Replaying the request will not restore it.",
+      );
+    return source;
+  }
   async updateSource(
     workspaceId: string,
     id: string,
@@ -338,6 +490,11 @@ export class KnowledgeRepository {
           "SOURCE_NOT_FOUND",
           "This source does not exist.",
           404,
+        );
+      if (current.origin)
+        throw new KnowledgeError(
+          "GITHUB_SOURCE_READ_ONLY",
+          "Imported GitHub revisions are read-only. Delete this source or explicitly import another reviewed file.",
         );
       if (current.revision !== value.revision)
         throw new KnowledgeError(
@@ -621,8 +778,9 @@ export class KnowledgeRepository {
           line_end: number;
           semantic: number;
           lexical: number;
+          origin: unknown | null;
         }>(
-          `SELECT c.source_id,c.revision,r.title,c.chunk_index,c.body,c.content_hash,c.line_start,c.line_end,
+          `SELECT c.source_id,c.revision,r.title,r.origin,c.chunk_index,c.body,c.content_hash,c.line_start,c.line_end,
              (1-(c.embedding OPERATOR(public.<=>) $3::public.vector))::float8 AS semantic,
              ts_rank_cd(to_tsvector('english',c.body),to_tsquery('english',$4))::float8 AS lexical
            FROM ${this.schema}.source_chunks c JOIN ${this.schema}.knowledge_sources s
@@ -642,6 +800,9 @@ export class KnowledgeRepository {
           if (row.semantic < 0.55 && (row.lexical <= 0 || row.semantic < 0.25))
             continue;
           candidates.push({
+            ...(row.origin
+              ? { origin: githubOriginSchema.parse(row.origin) }
+              : {}),
             kind: "source",
             ownerId: row.source_id,
             title: row.title,
@@ -692,6 +853,10 @@ export class KnowledgeRepository {
       let sourceNumber = 0;
       let memoryNumber = 0;
       for (const candidate of candidates.slice(0, 6)) {
+        // A nearly exhausted budget must not create a token-sized citation.
+        // Complete short facts are still allowed when their full text fits.
+        if (bytes < Math.min(80, Buffer.byteLength(candidate.text, "utf8")))
+          break;
         const text = excerpt(candidate.text, Math.min(800, bytes));
         if (!text) break;
         bytes -= Buffer.byteLength(text, "utf8");
@@ -994,8 +1159,15 @@ export class KnowledgeRepository {
     text: string,
   ): Promise<void> {
     await client.query(
-      `INSERT INTO ${this.schema}.source_revisions(workspace_id,source_id,revision,title,body,state) VALUES($1,$2,$3,$4,$5,'queued')`,
-      [workspace, source.id, source.revision, source.title, text],
+      `INSERT INTO ${this.schema}.source_revisions(workspace_id,source_id,revision,title,body,state,origin) VALUES($1,$2,$3,$4,$5,'queued',$6::jsonb)`,
+      [
+        workspace,
+        source.id,
+        source.revision,
+        source.title,
+        text,
+        source.origin ? JSON.stringify(source.origin) : null,
+      ],
     );
     const data: IndexJobData = {
       workspaceId: workspace,

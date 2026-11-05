@@ -220,4 +220,20 @@ The analogous web proposal replacement was confirmed by static review. Apply the
 
 Implemented and locally verified: 134 unit/client/contract tests pass, including 23 new recovery tests, with strict root/mobile TypeScript, web build, iOS export (801 modules) and fresh ad-hoc-signed Xcode Release Simulator compilation. At the initial code handoff, interaction checks remained pending and the owner setup was left to the founder; subsequent results follow below.
 
-Subsequent interactive verification passed on isolated synthetic data: web/native A/B/C proposal replacement and renewed acknowledgment, exact web C approval, native timeout with disabled decisions followed by successful refresh, native C rejection with no artifact, and session-revocation gates in both clients. Individual native 409, decision/conflict 401 and uncertain-mutation timeout paths remain fixture-tested; large accessibility text and physical-device behavior remain unverified. The test server, three disposable schemas and synthetic credentials were removed afterward. The founder independently completed actual owner setup and signed in. A grounded real-model package was generated and corrected, retaining the original model output; founder editorial approval remains a separate step.
+Subsequent interactive verification passed on isolated synthetic data: web/native A/B/C proposal replacement and renewed acknowledgment, exact web C approval, native timeout with disabled decisions followed by successful refresh, native C rejection with no artifact, and session-revocation gates in both clients. Individual native 409, decision/conflict 401 and uncertain-mutation timeout paths remain fixture-tested; large accessibility text and physical-device behavior remain unverified. The test server, three disposable schemas and synthetic credentials were removed afterward. The founder independently completed actual owner setup and signed in. A grounded real-model package was generated and corrected, retaining the original model output; the founder subsequently approved that exact local package, as recorded in the next increment.
+
+## GitHub knowledge increment — 5 November 2026
+
+The founder selected this first connector after approving the actual local founder package. Architecture §24 precedes UI design and implementation. Scope is one explicitly previewed public Vuzmi text file at an immutable commit, saved into the existing local knowledge pipeline.
+
+- [x] Record preview/import UI design, then implement shared contracts and bounded server adapter.
+- [x] Add atomic import receipts, per-revision provenance and append-only migration; preserve old migration checksums.
+- [x] Expose preview, explicit local save, indexing state and retained origin in the web interface; imported text is read-only.
+- [x] Preserve origin through retrieval, canonical documents and export, while keeping legacy approved bytes unchanged.
+- [x] Verify malformed/oversized/redirected/symlink/private/timeout/rate-limit responses, expired previews, changed inputs and uncertain retries.
+- [x] Verify PostgreSQL concurrent replay, restart, deletion and index-job atomicity; origin survives historical evidence retention.
+- [x] Run strict checks/build and browser rehearsal, plus one deliberate unauthenticated public-file import using local indexing. No model generation is needed for this gate.
+
+Private repositories, directory crawling, periodic sync, credentials, repository writes and native import UI are deferred. iOS continues to consume shared source/evidence contracts. Existing infrastructure allocation remains a separate pending gate.
+
+Evidence: 188 unit/client/API checks, 60 PostgreSQL checks, backup/restore of origin and import receipts, strict root/mobile TypeScript, web build, 802-module iOS export and a fresh signed Xcode Simulator build pass. The real owner session previewed/imported the public README at a pinned commit; local embeddings produced six passages and the corrected retrieval returned four attributed excerpts. Imported detail/expanded hashes fit 390px. Timeout, rate-limit, expired-preview, concurrent replay and deletion failure boundaries use fixtures rather than individually induced operator UI failures.

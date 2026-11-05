@@ -4,6 +4,10 @@ import {
   memorySchema,
   sourceDetailSchema,
   sourceSchema,
+  githubPreviewSchema,
+  type GithubPreview,
+  type GithubPreviewInput,
+  type GithubImportInput,
   type EvidenceSnapshot,
   type KnowledgeSnapshot,
   type Memory,
@@ -15,7 +19,7 @@ import {
   type SourceInput,
   type SourceUpdate,
 } from "@vuzmi/core";
-import { request } from "./api";
+import { ApiError, request } from "./api";
 
 export async function getKnowledge(): Promise<KnowledgeSnapshot> {
   return knowledgeSnapshotSchema.parse(await request("/knowledge"));
@@ -63,4 +67,37 @@ export async function searchKnowledge(
     body: JSON.stringify(input),
   })) as { result: unknown };
   return evidenceSnapshotSchema.parse(body.result);
+}
+
+export async function previewGithubFile(
+  input: GithubPreviewInput,
+  signal?: AbortSignal,
+): Promise<GithubPreview> {
+  return githubPreviewSchema.parse(
+    await request("/knowledge/github/preview", {
+      method: "POST",
+      body: JSON.stringify(input),
+      signal,
+    }),
+  );
+}
+
+export async function importGithubFile(
+  input: GithubImportInput,
+  signal?: AbortSignal,
+): Promise<{ source: Source; replayed: boolean }> {
+  const body = (await request("/knowledge/github/import", {
+    method: "POST",
+    body: JSON.stringify(input),
+    signal,
+  })) as { source?: unknown; replayed?: unknown };
+  const source = sourceSchema.safeParse(body?.source);
+  if (!source.success || typeof body.replayed !== "boolean") {
+    throw new ApiError(
+      "The import response could not be verified. Retry save unchanged to check the same import receipt.",
+      "INVALID_RESPONSE",
+      0,
+    );
+  }
+  return { source: source.data, replayed: body.replayed };
 }

@@ -1200,6 +1200,28 @@ function RunDetail({
               <Text selectable style={mobile.hash}>
                 {item.contentHash}
               </Text>
+              {item.origin && (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={styles.caption}>
+                    GitHub snapshot · {item.origin.owner}/
+                    {item.origin.repository}
+                  </Text>
+                  <Text selectable style={styles.body}>
+                    {item.origin.path}
+                  </Text>
+                  <Text selectable style={mobile.hash}>
+                    Commit {item.origin.commitOid}
+                    {"\n"}
+                    Blob {item.origin.blobOid}
+                    {"\n"}
+                    Imported text SHA-256 {item.origin.normalizedSha256}
+                  </Text>
+                  <Text style={styles.caption}>
+                    Lines refer to normalized local text. Source claims remain
+                    unverified.
+                  </Text>
+                </View>
+              )}
             </Panel>
           ))}
           {evidence && (

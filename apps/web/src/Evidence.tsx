@@ -5,6 +5,7 @@ import type {
   Memory,
 } from "@vuzmi/core";
 import { Icon } from "./icons";
+import { GithubProvenance } from "./GithubOrigin";
 
 export function activeMemory(memory: Memory): boolean {
   return !memory.expiresAt || new Date(memory.expiresAt).getTime() > Date.now();
@@ -73,6 +74,7 @@ export function EvidencePicker({
                 <small>
                   Revision {source.activeRevision ?? source.revision} ·{" "}
                   {source.chunkCount} passages
+                  {source.origin ? " · GitHub snapshot" : ""}
                 </small>
               </span>
             </label>
@@ -225,6 +227,7 @@ export function EvidencePanel({
                   : ""}
               </p>
               <p className="evidence-text">{item.text}</p>
+              {item.origin && <GithubProvenance origin={item.origin} />}
               <details className="route-details">
                 <summary>
                   Evidence identity

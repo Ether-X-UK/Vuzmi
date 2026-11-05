@@ -114,10 +114,10 @@ test("knowledge PostgreSQL integration", { skip: !url }, async (t) => {
       );
       await repository.close();
       await sql.query(
-        `DROP TABLE "${schema}".run_knowledge,"${schema}".knowledge_memories,"${schema}".source_chunks,"${schema}".source_revisions,"${schema}".knowledge_sources,"${schema}".knowledge_profiles`,
+        `DROP TABLE "${schema}".github_import_receipts,"${schema}".run_knowledge,"${schema}".knowledge_memories,"${schema}".source_chunks,"${schema}".source_revisions,"${schema}".knowledge_sources,"${schema}".knowledge_profiles`,
       );
       await sql.query(
-        `DELETE FROM "${schema}".schema_migrations WHERE version=2`,
+        `DELETE FROM "${schema}".schema_migrations WHERE version>=2`,
       );
       const upgraded = await PostgresRunRepository.connect({
         connectionString: url!,
@@ -130,7 +130,7 @@ test("knowledge PostgreSQL integration", { skip: !url }, async (t) => {
         );
         assert.deepEqual(
           after.rows.map((row) => row.version),
-          [1, 2],
+          [1, 2, 3],
         );
         assert.equal(after.rows[0].checksum, before.rows[0].checksum);
         assert.deepEqual(await upgraded.knowledge.listSources(), []);
@@ -148,7 +148,7 @@ test("knowledge PostgreSQL integration", { skip: !url }, async (t) => {
       );
       assert.deepEqual(
         migrations.rows.map((row) => row.version),
-        [1, 2],
+        [1, 2, 3],
       );
       assert.ok(
         migrations.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum)),

@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   sourceInputSchema,
   sourceUpdateSchema,
@@ -14,6 +14,7 @@ import {
 } from "@vuzmi/providers";
 import type { KnowledgeEmbedder, PostgresRunRepository } from "@vuzmi/runtime";
 import { HttpError } from "./errors.js";
+import { registerGithubKnowledgeRoutes } from "./github.js";
 
 export interface KnowledgeRouteOptions {
   repository?: PostgresRunRepository;
@@ -21,6 +22,9 @@ export interface KnowledgeRouteOptions {
   ollamaEmbeddingModel?: string;
   discoverProfile?: typeof discoverEmbeddingProfile;
   embed?: KnowledgeEmbedder;
+  githubFetch?: typeof globalThis.fetch;
+  ownerId?: (request: FastifyRequest) => string | undefined;
+  now?: () => Date;
 }
 
 export function registerKnowledgeRoutes(
@@ -55,6 +59,12 @@ export function registerKnowledgeRoutes(
       );
     return options.repository.knowledge;
   };
+  registerGithubKnowledgeRoutes(app, {
+    knowledge,
+    ownerId: options.ownerId ?? (() => undefined),
+    fetch: options.githubFetch,
+    now: options.now,
+  });
   app.get("/v1/knowledge", async (): Promise<KnowledgeSnapshot> => {
     const repository = knowledge();
     const [sources, memories] = await Promise.all([

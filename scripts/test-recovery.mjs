@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -8,6 +8,7 @@ import { Client } from "pg";
 import { AuthService } from "../packages/auth/src/index.ts";
 import {
   createApprovedPackage,
+  githubPreviewFingerprintInput,
   renderDraftDocument,
 } from "../packages/core/src/index.ts";
 import {
@@ -107,11 +108,47 @@ try {
     profile,
     vectors: texts.map(() => [1, 0, 0]),
   });
-  const source = await repository.knowledge.createSource("local-workspace", {
+  const fixtureText =
+    "# Release recovery\nThe local release artifact requires explicit owner review and durable evidence.";
+  const digest = (value) => createHash("sha256").update(value).digest("hex");
+  const importPreview = {
+    previewId: randomUUID(),
+    expiresAt: new Date(Date.now() + 300_000).toISOString(),
     title: "Release recovery fixture",
     format: "markdown",
-    text: "# Release recovery\nThe local release artifact requires explicit owner review and durable evidence.",
-  });
+    text: fixtureText,
+    origin: {
+      kind: "github-public",
+      repositoryId: 123456,
+      owner: "Ether-X-UK",
+      repository: "Vuzmi",
+      path: "docs/RECOVERY_FIXTURE.md",
+      gitHashAlgorithm: "sha1",
+      commitOid: "a".repeat(40),
+      blobOid: createHash("sha1")
+        .update(`blob ${Buffer.byteLength(fixtureText)}\0${fixtureText}`)
+        .digest("hex"),
+      rawSha256: digest(fixtureText),
+      rawBytes: Buffer.byteLength(fixtureText),
+      normalizedSha256: digest(fixtureText),
+      normalizedBytes: Buffer.byteLength(fixtureText),
+      normalizationVersion: "plain-text-v1",
+      fetchedAt: new Date().toISOString(),
+    },
+  };
+  importPreview.fingerprint = digest(
+    githubPreviewFingerprintInput(importPreview),
+  );
+  const importRequest = {
+    importId: randomUUID(),
+    previewId: importPreview.previewId,
+    fingerprint: importPreview.fingerprint,
+  };
+  const { source } = await repository.knowledge.importGithubSource(
+    "local-workspace",
+    importRequest,
+    importPreview,
+  );
   await processIndexJob({
     repository,
     embed,
@@ -351,6 +388,23 @@ try {
     expectedSource,
   );
   assert.deepEqual(
+    await restoredRepository.knowledge.importGithubSource(
+      "local-workspace",
+      importRequest,
+      {
+        ...importPreview,
+        expiresAt: "2000-01-01T00:00:00.000Z",
+      },
+    ),
+    { source: expectedSource.source, replayed: true },
+    "restored import receipts replay without a new source or indexing job",
+  );
+  assert.deepEqual(
+    expectedPackage.evidence.items.find((item) => item.kind === "source")
+      .origin,
+    importPreview.origin,
+  );
+  assert.deepEqual(
     await restoredRepository.knowledge.listMemories(),
     expectedMemory,
   );
@@ -384,7 +438,7 @@ try {
     expectedRun,
   );
   console.info(
-    "Recovery drill passed: isolated native dump/restore, permission/checksum/empty-target guards, source/memory/vectors, exact run/artifact/fingerprint/revision/events and human revision history/package, owner/session binding, session revocation, and pending-job quarantine.",
+    "Recovery drill passed: isolated native dump/restore, permission/checksum/empty-target guards, source/memory/vectors, GitHub origin/import receipt replay, exact run/artifact/fingerprint/revision/events and human revision history/package, owner/session binding, session revocation, and pending-job quarantine.",
   );
   console.info(
     "Only disposable clusters and synthetic fixtures were used. No operator database, model, or cloud service was contacted.",
