@@ -4,11 +4,15 @@ import {
   decisionSchema,
   developmentInputSchema,
   developmentApplicationInputSchema,
+  developmentDeliveryInputSchema,
+  developmentDeliveryTextSchema,
 } from "@vuzmi/core";
 import type { SafeOwner } from "@vuzmi/core";
 import type {
   DevelopmentRepository,
   DevelopmentApplicationRepository,
+  DevelopmentDeliveryRepository,
+  DevelopmentGitHubAdapter,
 } from "@vuzmi/runtime";
 import type { listLocalModels } from "@vuzmi/providers";
 import { GithubKnowledgeImporter } from "./github.js";
@@ -19,6 +23,8 @@ export function registerDevelopmentRoutes(
   options: {
     repository: () => DevelopmentRepository;
     applications?: () => DevelopmentApplicationRepository;
+    deliveries?: () => DevelopmentDeliveryRepository;
+    githubDelivery?: DevelopmentGitHubAdapter;
     owner: (request: FastifyRequest) => SafeOwner | undefined;
     models: () => ReturnType<typeof listLocalModels>;
     defaultModel?: string;
@@ -250,6 +256,127 @@ export function registerDevelopmentRoutes(
         actor,
       );
       return reply.code(result.replayed ? 200 : 201).send(result);
+    },
+  );
+  const deliveries = () => {
+    if (!options.deliveries)
+      throw new HttpError(
+        503,
+        "DELIVERY_UNAVAILABLE",
+        "GitHub delivery requires PostgreSQL and the trusted publication worker.",
+      );
+    return options.deliveries();
+  };
+  const deliveryConnector = () => {
+    if (!options.githubDelivery)
+      throw new HttpError(
+        503,
+        "DELIVERY_UNAVAILABLE",
+        "The bounded public GitHub read connector is unavailable.",
+      );
+    return options.githubDelivery;
+  };
+  app.get<{ Params: { id: string } }>(
+    "/v1/development/:id/delivery",
+    async (request) => {
+      owner(request);
+      const runId = id(request.params.id);
+      if (!(await options.repository().get("local-workspace", runId)))
+        throw new HttpError(
+          404,
+          "DEVELOPMENT_NOT_FOUND",
+          "This development run does not exist.",
+        );
+      const repository = deliveries();
+      return {
+        operation: (await repository.get("local-workspace", runId)) ?? null,
+        ...(await repository.readiness()),
+      };
+    },
+  );
+  app.post<{ Params: { id: string } }>(
+    "/v1/development/:id/delivery/plan",
+    { bodyLimit: 70 * 1024 },
+    async (request) => {
+      owner(request);
+      const input = developmentDeliveryTextSchema.safeParse(request.body);
+      if (!input.success)
+        throw new HttpError(
+          400,
+          "INVALID_INPUT",
+          "Provide the exact bounded public pull request title and body, without an application marker.",
+        );
+      return deliveries().plan(
+        "local-workspace",
+        id(request.params.id),
+        input.data,
+        await deliveryConnector().observeTarget(),
+      );
+    },
+  );
+  app.post<{ Params: { id: string } }>(
+    "/v1/development/:id/delivery",
+    { bodyLimit: 70 * 1024 },
+    async (request, reply) => {
+      const actor = owner(request),
+        input = developmentDeliveryInputSchema.safeParse(request.body);
+      if (!input.success)
+        throw new HttpError(
+          400,
+          "INVALID_INPUT",
+          "Provide the request UUID, package SHA-256, reviewed delivery plan fingerprint and exact reviewed title/body.",
+        );
+      const runId = id(request.params.id),
+        repository = deliveries(),
+        previous = await repository.findRequest(
+          "local-workspace",
+          runId,
+          input.data,
+          actor.id,
+        );
+      if (previous) return { operation: previous, replayed: true };
+      const result = await repository.authorize(
+        "local-workspace",
+        runId,
+        input.data,
+        actor,
+        await deliveryConnector().observeTarget(),
+      );
+      return reply.code(result.replayed ? 200 : 201).send(result);
+    },
+  );
+  app.post<{ Params: { id: string } }>(
+    "/v1/development/:id/delivery/refresh",
+    { bodyLimit: 1024 },
+    async (request) => {
+      owner(request);
+      const runId = id(request.params.id);
+      if (
+        request.body !== undefined &&
+        (typeof request.body !== "object" ||
+          request.body === null ||
+          Array.isArray(request.body) ||
+          Object.keys(request.body).length)
+      )
+        throw new HttpError(
+          400,
+          "INVALID_INPUT",
+          "CI refresh accepts no publication parameters.",
+        );
+      if (!(await options.repository().get("local-workspace", runId)))
+        throw new HttpError(
+          404,
+          "DEVELOPMENT_NOT_FOUND",
+          "This development run does not exist.",
+        );
+      return {
+        operation:
+          (await deliveries().refresh(
+            "local-workspace",
+            runId,
+            deliveryConnector(),
+          )) ?? null,
+      };
     },
   );
 }

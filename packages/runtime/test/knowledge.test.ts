@@ -112,9 +112,12 @@ test("knowledge PostgreSQL integration", { skip: !url }, async (t) => {
       const before = await sql.query(
         `SELECT checksum FROM "${schema}".schema_migrations WHERE version=1`,
       );
+      const previousMigrations = await sql.query(
+        `SELECT version,checksum FROM "${schema}".schema_migrations WHERE version<=5 ORDER BY version`,
+      );
       await repository.close();
       await sql.query(
-        `DROP TABLE "${schema}".development_application_events,"${schema}".development_applications,"${schema}".development_application_runtime,"${schema}".development_profiles,"${schema}".development_artifacts,"${schema}".development_attempts,"${schema}".development_run_events,"${schema}".development_runtime,"${schema}".development_runs,"${schema}".github_import_receipts,"${schema}".run_knowledge,"${schema}".knowledge_memories,"${schema}".source_chunks,"${schema}".source_revisions,"${schema}".knowledge_sources,"${schema}".knowledge_profiles`,
+        `DROP TABLE "${schema}".development_delivery_events,"${schema}".development_deliveries,"${schema}".development_delivery_runtime,"${schema}".development_application_events,"${schema}".development_applications,"${schema}".development_application_runtime,"${schema}".development_profiles,"${schema}".development_artifacts,"${schema}".development_attempts,"${schema}".development_run_events,"${schema}".development_runtime,"${schema}".development_runs,"${schema}".github_import_receipts,"${schema}".run_knowledge,"${schema}".knowledge_memories,"${schema}".source_chunks,"${schema}".source_revisions,"${schema}".knowledge_sources,"${schema}".knowledge_profiles`,
       );
       await sql.query(
         `DELETE FROM "${schema}".schema_migrations WHERE version>=2`,
@@ -130,9 +133,10 @@ test("knowledge PostgreSQL integration", { skip: !url }, async (t) => {
         );
         assert.deepEqual(
           after.rows.map((row) => row.version),
-          [1, 2, 3, 4, 5],
+          [1, 2, 3, 4, 5, 6],
         );
         assert.equal(after.rows[0].checksum, before.rows[0].checksum);
+        assert.deepEqual(after.rows.slice(0, 5), previousMigrations.rows);
         assert.deepEqual(await upgraded.knowledge.listSources(), []);
       } finally {
         await upgraded.close();
@@ -148,7 +152,7 @@ test("knowledge PostgreSQL integration", { skip: !url }, async (t) => {
       );
       assert.deepEqual(
         migrations.rows.map((row) => row.version),
-        [1, 2, 3, 4, 5],
+        [1, 2, 3, 4, 5, 6],
       );
       assert.ok(
         migrations.rows.every((row) => /^[a-f0-9]{64}$/.test(row.checksum)),

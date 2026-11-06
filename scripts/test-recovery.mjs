@@ -16,7 +16,9 @@ import {
   processIndexJob,
   processRunJob,
   processDevelopmentJob,
+  processDevelopmentDeliveryJob,
 } from "../packages/runtime/src/index.ts";
+import { approvedDeliveryFixture } from "../packages/runtime/test/delivery-fixtures.ts";
 import {
   developmentFixtureInput,
   developmentFixturePatch,
@@ -327,6 +329,56 @@ try {
     `vuzmi-dev-${interruptedDevelopment.id}-${interruptedAttempt.attemptId}-baseline`,
   );
   const sourceSql = await database(sourceUrl);
+  // Synthetic delivery authorization only: no GitHub request or credential.
+  const deliveryFixture = approvedDeliveryFixture();
+  const deliveryRun = deliveryFixture.run;
+  await sourceSql.query(
+    "INSERT INTO vuzmi.development_runs(workspace_id,id,request_id,request_hash,owner_id,revision,status,aggregate,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)",
+    [
+      deliveryRun.workspaceId,
+      deliveryRun.id,
+      deliveryRun.requestId,
+      deliveryRun.requestFingerprint,
+      deliveryRun.createdBy,
+      deliveryRun.revision,
+      deliveryRun.status,
+      JSON.stringify(deliveryRun),
+      deliveryRun.createdAt,
+      deliveryRun.updatedAt,
+    ],
+  );
+  const expectedDelivery = deliveryFixture.operation;
+  await sourceSql.query(
+    "INSERT INTO vuzmi.development_deliveries(workspace_id,id,run_id,request_id,revision,status,aggregate) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)",
+    [
+      expectedDelivery.workspaceId,
+      expectedDelivery.id,
+      expectedDelivery.runId,
+      expectedDelivery.requestId,
+      expectedDelivery.revision,
+      expectedDelivery.status,
+      JSON.stringify(expectedDelivery),
+    ],
+  );
+  await sourceSql.query(
+    "INSERT INTO vuzmi.development_delivery_events(workspace_id,delivery_id,sequence,event) VALUES($1,$2,$3,$4::jsonb)",
+    [
+      expectedDelivery.workspaceId,
+      expectedDelivery.id,
+      1,
+      JSON.stringify(expectedDelivery.events[0]),
+    ],
+  );
+  await repository.deliveries.heartbeat(developmentWorkerId, {
+    ready: true,
+    reason: "Synthetic recovery delivery fixture; no GitHub calls.",
+    authorityIdentity: deliveryFixture.authorityIdentity,
+    target: deliveryFixture.target,
+  });
+  await repository.boss.send("vuzmi-development-delivery", {
+    workspaceId: expectedDelivery.workspaceId,
+    deliveryId: expectedDelivery.id,
+  });
   const expectedEvents = (
     await sourceSql.query(
       "SELECT sequence,event FROM vuzmi.run_events WHERE run_id=$1 ORDER BY sequence",
@@ -456,6 +508,7 @@ try {
             "vuzmi-index-source",
             "vuzmi-development-patch",
             "vuzmi-development-application",
+            "vuzmi-development-delivery",
           ],
         ],
       )
@@ -518,6 +571,57 @@ try {
     },
   });
   assert.equal(applicationEffects, 0);
+
+  assert.equal(
+    (await restoredRepository.deliveries.readiness()).available,
+    false,
+  );
+  const restoredDelivery = await restoredRepository.deliveries.get(
+    "local-workspace",
+    expectedDelivery.runId,
+  );
+  assert.equal(restoredDelivery.status, "unconfirmed");
+  assert.equal(restoredDelivery.error.code, "DELIVERY_RESTORE_QUARANTINED");
+  assert.deepEqual(restoredDelivery.plan, expectedDelivery.plan);
+  assert.deepEqual(
+    restoredDelivery.events.slice(0, -1),
+    expectedDelivery.events,
+  );
+  assert.equal(restoredDelivery.receipt, undefined);
+  assert.equal(
+    (
+      await targetSql.query(
+        "SELECT count(*)::int count FROM vuzmi.development_delivery_runtime",
+      )
+    ).rows[0].count,
+    0,
+  );
+  let deliveryEffects = 0;
+  const restoredConnector = {
+    inspect: async () => {
+      deliveryEffects++;
+      throw new Error("Restored delivery must stay quarantined.");
+    },
+    publish: async () => {
+      deliveryEffects++;
+      throw new Error("Restored delivery must never publish.");
+    },
+  };
+  await restoredRepository.deliveries.reconcile(restoredConnector);
+  await restoredRepository.deliveries.refresh(
+    "local-workspace",
+    expectedDelivery.runId,
+    restoredConnector,
+  );
+  await processDevelopmentDeliveryJob({
+    repository: restoredRepository,
+    connector: restoredConnector,
+    workerId: randomUUID(),
+    job: {
+      data: { workspaceId: "local-workspace", deliveryId: expectedDelivery.id },
+    },
+  });
+  assert.equal(deliveryEffects, 0);
 
   assert.deepEqual(
     await restoredRepository.development.get("local-workspace", development.id),
@@ -614,7 +718,7 @@ try {
     expectedRun,
   );
   console.info(
-    "Recovery drill passed: isolated native dump/restore, permission/checksum/empty-target guards, source/memory/vectors, GitHub origin/import receipt replay, exact run/artifact/fingerprint/revision/events and human revision history/package, exact development package, separate application authorization/restore quarantine and interrupted-attempt/runtime quarantine, owner/session binding, session revocation, and pending-job quarantine.",
+    "Recovery drill passed: isolated native dump/restore, permission/checksum/empty-target guards, source/memory/vectors, GitHub origin/import receipt replay, exact run/artifact/fingerprint/revision/events and human revision history/package, exact development package, separate application and GitHub delivery authorization/restore quarantine, interrupted-attempt/runtime quarantine, owner/session binding, session revocation, and pending-job quarantine.",
   );
   console.info(
     "Only disposable clusters and synthetic fixtures were used. No operator database, model, or cloud service was contacted.",

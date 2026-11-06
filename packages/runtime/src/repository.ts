@@ -41,6 +41,12 @@ import {
   developmentApplicationMigration,
 } from "./development-application.js";
 
+import {
+  DevelopmentDeliveryRepository,
+  DEVELOPMENT_DELIVERY_QUEUE,
+  developmentDeliveryMigration,
+} from "./development-delivery.js";
+
 export const GENERATION_QUEUE = "vuzmi-generate-release";
 export const GENERATION_RETRY_LIMIT = 2;
 export const sha256 = (value: string): string =>
@@ -175,6 +181,7 @@ async function migrate(pool: Pool, schemaName: string): Promise<void> {
       { version: 3, sql: githubKnowledgeMigration(schema) },
       { version: 4, sql: developmentMigration(schema) },
       { version: 5, sql: developmentApplicationMigration(schema) },
+      { version: 6, sql: developmentDeliveryMigration(schema) },
     ]) {
       const existing = await client.query<{ checksum: string }>(
         `SELECT checksum FROM ${schema}.schema_migrations WHERE version=$1`,
@@ -204,6 +211,7 @@ export class PostgresRunRepository {
   readonly knowledge: KnowledgeRepository;
   readonly development: DevelopmentRepository;
   readonly applications: DevelopmentApplicationRepository;
+  readonly deliveries: DevelopmentDeliveryRepository;
   private closed = false;
 
   private constructor(
@@ -239,6 +247,17 @@ export class PostgresRunRepository {
       transaction: (operation, signal) => transaction(pool, operation, signal),
       now,
       getRun: (workspaceId, id) => this.development.get(workspaceId, id),
+    });
+    this.deliveries = new DevelopmentDeliveryRepository({
+      pool,
+      boss,
+      schema: this.schema,
+      queueSchema: this.queueSchema,
+      transaction: (operation, signal) => transaction(pool, operation, signal),
+      now,
+      getRun: (workspaceId, id) => this.development.get(workspaceId, id),
+      getApplication: (workspaceId, id) =>
+        this.applications.get(workspaceId, id),
     });
   }
 
@@ -296,6 +315,12 @@ export class PostgresRunRepository {
         policy: "singleton",
         retryLimit: 0,
         expireInSeconds: 120,
+        heartbeatSeconds: 10,
+      });
+      await boss.createQueue(DEVELOPMENT_DELIVERY_QUEUE, {
+        policy: "singleton",
+        retryLimit: 0,
+        expireInSeconds: 180,
         heartbeatSeconds: 10,
       });
       return new PostgresRunRepository(

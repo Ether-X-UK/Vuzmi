@@ -5325,6 +5325,26 @@ code {
 .development-application .development-acknowledgment { display: flex; flex-wrap: wrap; gap: 12px; }
 .development-application .development-acknowledgment p { flex-basis: 100%; margin-bottom: 0; }
 .development-application .button { white-space: normal; height: auto; min-height: 44px; line-height: 1.5; }
+.development-delivery { border-color: #39535e; }
+.development-delivery h3 { font-size: 17px; line-height: 1.5; font-weight: 500; margin: 21px 0 13px; }
+.development-delivery h4 { font-size: 14px; line-height: 1.6; font-weight: 500; margin: 22px 0 9px; color: #d4e3df; }
+.development-delivery .button { white-space: normal; height: auto; min-height: 44px; line-height: 1.5; }
+.development-delivery-form { margin: 20px 0; max-width: 100%; }
+.development-delivery-form input,
+.development-delivery-form textarea { width: 100%; min-width: 0; font-size: 15px; }
+.development-delivery-form textarea { resize: vertical; min-height: 155px; }
+.development-delivery .development-acknowledgment { display: flex; flex-wrap: wrap; gap: 12px; }
+.development-delivery .development-acknowledgment p { flex-basis: 100%; margin-bottom: 0; }
+.development-delivery-disclosure { padding: 0 16px 15px; border: 1px solid #78613c; border-radius: 7px; background: #27231c; margin: 22px 0; }
+.development-delivery-disclosure p { color: #e4ceb0; font-size: 14px; line-height: 1.75; margin-top: 10px; }
+.development-delivery-text { white-space: pre-wrap; overflow-wrap: anywhere; color: #c5d8d7; font-size: 14px; line-height: 1.75; }
+.development-delivery-link { max-width: 100%; width: fit-content; }
+.development-delivery-ci { margin-top: 25px; padding-top: 5px; border-top: 1px solid #344b46; }
+.development-delivery-ci > .development-section-heading { align-items: center; }
+.development-delivery-ci h3 { margin: 15px 0; }
+.development-delivery-workflows { padding: 0; margin: 20px 0; list-style: none; display: grid; gap: 15px; }
+.development-delivery-workflows > li { min-width: 0; padding: 17px; border: 1px solid #344b46; border-radius: 7px; background: #0b171e; }
+.development-delivery-workflows a { color: #a8d8c7; font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
 .development-layout { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 24px; align-items: start; }
 .development-main,
 .development-inspector { min-width: 0; display: grid; gap: 23px; }
@@ -5414,5 +5434,7 @@ code {
   .development-section-heading { flex-wrap: wrap; }
   .development-application-actions > .button,
   .development-application .development-acknowledgment > .button { width: 100%; }
+  .development-delivery .development-acknowledgment > .button { width: 100%; }
+  .development-delivery-ci > .development-section-heading { align-items: flex-start; }
   .development-exact { max-height: 430px; }
 }

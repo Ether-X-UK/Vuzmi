@@ -166,6 +166,7 @@ export async function restoreDatabase({
             "vuzmi-index-source",
             "vuzmi-development-patch",
             "vuzmi-development-application",
+            "vuzmi-development-delivery",
           ],
         ],
       );
@@ -234,6 +235,59 @@ export async function restoreDatabase({
           );
           await client.query(
             `INSERT INTO ${runtime}.development_application_events(workspace_id,application_id,sequence,event) VALUES($1,$2,$3,$4::jsonb)`,
+            [old.workspaceId, old.id, event.sequence, JSON.stringify(event)],
+          );
+        }
+      }
+      const deliveries = await client.query(
+        "SELECT to_regclass($1) AS operations,to_regclass($2) AS runtime",
+        [
+          `${manifest.runtimeSchema}.development_deliveries`,
+          `${manifest.runtimeSchema}.development_delivery_runtime`,
+        ],
+      );
+      if (deliveries.rows[0].runtime)
+        await client.query(
+          `DELETE FROM ${runtime}.development_delivery_runtime`,
+        );
+      if (deliveries.rows[0].operations) {
+        const unfinished = await client.query(
+          `SELECT id,aggregate FROM ${runtime}.development_deliveries WHERE status IN ('queued','running','unconfirmed') FOR UPDATE`,
+        );
+        for (const row of unfinished.rows) {
+          const old = row.aggregate,
+            now = new Date().toISOString();
+          const event = {
+            sequence: old.events.length + 1,
+            type: "delivery.restore_quarantined",
+            occurredAt: now,
+            message:
+              "Database restore quarantined this unfinished GitHub delivery. No external writes are restarted on this host.",
+          };
+          const next = {
+            ...old,
+            status: "unconfirmed",
+            revision: old.revision + 1,
+            updatedAt: now,
+            events: [...old.events, event],
+            error: {
+              code: "DELIVERY_RESTORE_QUARANTINED",
+              message:
+                "Inspect the original remote outcome and retained authorization independently. This delivery cannot replay automatically.",
+            },
+          };
+          await client.query(
+            `UPDATE ${runtime}.development_deliveries SET status=$3,revision=$4,aggregate=$5::jsonb,worker_id=NULL,attempt_id=NULL,seen_at=NULL WHERE workspace_id=$1 AND id=$2`,
+            [
+              old.workspaceId,
+              old.id,
+              next.status,
+              next.revision,
+              JSON.stringify(next),
+            ],
+          );
+          await client.query(
+            `INSERT INTO ${runtime}.development_delivery_events(workspace_id,delivery_id,sequence,event) VALUES($1,$2,$3,$4::jsonb)`,
             [old.workspaceId, old.id, event.sequence, JSON.stringify(event)],
           );
         }

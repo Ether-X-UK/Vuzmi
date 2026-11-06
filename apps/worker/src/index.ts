@@ -11,6 +11,8 @@ import {
   createDevelopmentRunner,
   createDevelopmentGitConnector,
   startDevelopmentApplicationWorker,
+  createDevelopmentGitHubConnector,
+  startDevelopmentDeliveryWorker,
 } from "@vuzmi/runtime";
 import { loadServerConfig } from "@vuzmi/runtime/config";
 
@@ -26,6 +28,8 @@ let developmentWorker:
   Awaited<ReturnType<typeof startDevelopmentWorker>> | undefined;
 let applicationWorker:
   Awaited<ReturnType<typeof startDevelopmentApplicationWorker>> | undefined;
+let deliveryWorker:
+  Awaited<ReturnType<typeof startDevelopmentDeliveryWorker>> | undefined;
 try {
   repository = await PostgresRunRepository.connect({
     connectionString: config.databaseUrl,
@@ -72,6 +76,16 @@ try {
         "A local branch operation needs inspection. Consult its retained application record.",
       ),
   });
+  deliveryWorker = await startDevelopmentDeliveryWorker({
+    repository,
+    connector: createDevelopmentGitHubConnector({
+      tokenFile: process.env.VUZMI_GITHUB_DELIVERY_TOKEN_FILE,
+    }),
+    onError: () =>
+      console.error(
+        "A GitHub delivery needs inspection. Consult its retained publication record; no write is retried automatically.",
+      ),
+  });
   let closing = false;
   const close = (): void => {
     if (closing) return;
@@ -80,6 +94,7 @@ try {
       worker!.stop(),
       developmentWorker!.stop(),
       applicationWorker!.stop(),
+      deliveryWorker!.stop(),
     ])
       .then(() => repository!.close())
       .then(
@@ -93,6 +108,7 @@ try {
     "Vuzmi local Ollama worker is ready. Cloud execution is disabled.",
   );
 } catch (error) {
+  await deliveryWorker?.stop().catch(() => undefined);
   await applicationWorker?.stop().catch(() => undefined);
   await developmentWorker?.stop().catch(() => undefined);
   await worker?.stop().catch(() => undefined);

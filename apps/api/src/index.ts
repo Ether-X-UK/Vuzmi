@@ -60,7 +60,7 @@ try {
   process.once("SIGTERM", close);
   await app.listen({ host: "127.0.0.1", port });
   console.info(
-    `Vuzmi local API: http://127.0.0.1:${port} — ${config.databaseUrl ? "PostgreSQL execution" : "file-backed simulation"}; external actions disabled.`,
+    `Vuzmi local API: http://127.0.0.1:${port} — ${config.databaseUrl ? "PostgreSQL execution" : "file-backed simulation"}; GitHub publication requires a separately configured worker and exact owner authorization.`,
   );
 } catch {
   await app?.close().catch(() => undefined);

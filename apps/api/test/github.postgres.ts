@@ -135,6 +135,9 @@ test(
         const checksums = await sql.query(
           `SELECT version,checksum FROM "${schema}".schema_migrations WHERE version<3 ORDER BY version`,
         );
+        const previousMigrations = await sql.query(
+          `SELECT version,checksum FROM "${schema}".schema_migrations WHERE version<=5 ORDER BY version`,
+        );
         await repository.close();
         await sql.query(`DROP TABLE "${schema}".github_import_receipts`);
         await sql.query(
@@ -149,9 +152,10 @@ test(
         );
         assert.deepEqual(
           after.rows.map((row) => row.version),
-          [1, 2, 3, 4, 5],
+          [1, 2, 3, 4, 5, 6],
         );
         assert.deepEqual(after.rows.slice(0, 2), checksums.rows);
+        assert.deepEqual(after.rows.slice(0, 5), previousMigrations.rows);
         assert.deepEqual(
           await upgraded.knowledge.getSource(workspace, source.id),
           before,

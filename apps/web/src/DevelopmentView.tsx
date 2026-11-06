@@ -17,6 +17,7 @@ import {
 import { ApiError } from "./api";
 import { DevelopmentProfileDetails as ProfileDetails } from "./DevelopmentProfileDetails";
 import { DevelopmentApplicationPanel } from "./DevelopmentApplication";
+import { DevelopmentDeliveryPanel } from "./DevelopmentDelivery";
 import { Icon } from "./icons";
 import {
   createDevelopment,
@@ -1135,6 +1136,14 @@ function DevelopmentDetail({
             latestRun.decision?.decision === "approve" && (
               <DevelopmentApplicationPanel
                 key={`${latestRun.id}:${latestRun.artifact.sha256}`}
+                run={latestRun}
+              />
+            )}
+          {latestRun.status === "completed" &&
+            latestRun.artifact &&
+            latestRun.decision?.decision === "approve" && (
+              <DevelopmentDeliveryPanel
+                key={`delivery:${latestRun.id}:${latestRun.artifact.sha256}`}
                 run={latestRun}
               />
             )}

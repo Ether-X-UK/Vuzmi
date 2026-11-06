@@ -13,6 +13,7 @@ import {
   DraftRevisionError,
   DevelopmentError,
   DevelopmentApplicationError,
+  DevelopmentDeliveryError,
   reviseDraftSchema,
 } from "@vuzmi/core";
 import type {
@@ -30,8 +31,9 @@ import {
   KnowledgeError,
   PostgresRunRepository,
   RunNotFoundError,
+  createDevelopmentGitHubConnector,
 } from "@vuzmi/runtime";
-import type { KnowledgeEmbedder } from "@vuzmi/runtime";
+import type { KnowledgeEmbedder, DevelopmentGitHubAdapter } from "@vuzmi/runtime";
 import { LocalStateStore } from "./store.js";
 import { HttpError } from "./errors.js";
 import { registerKnowledgeRoutes } from "./knowledge.js";
@@ -56,6 +58,7 @@ export interface AppOptions {
   authBaseUrl?: string;
   webRoot?: string;
   githubFetch?: typeof globalThis.fetch;
+  githubDelivery?: DevelopmentGitHubAdapter;
 }
 
 const allowedHost = /^(localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/i;
@@ -226,7 +229,8 @@ export async function buildApp(
   app.setErrorHandler((error, _request, reply) => {
     if (
       error instanceof DevelopmentError ||
-      error instanceof DevelopmentApplicationError
+      error instanceof DevelopmentApplicationError ||
+      error instanceof DevelopmentDeliveryError
     )
       return reply
         .code(error.statusCode)
@@ -403,6 +407,21 @@ export async function buildApp(
         );
       return repository.applications;
     },
+    deliveries: () => {
+      if (!repository?.deliveries)
+        throw new HttpError(
+          503,
+          "DELIVERY_UNAVAILABLE",
+          "GitHub delivery requires PostgreSQL and a trusted publication worker.",
+        );
+      return repository.deliveries;
+    },
+    githubDelivery:
+      options.githubDelivery ??
+      createDevelopmentGitHubConnector({
+        fetch: options.githubFetch,
+        now: options.now,
+      }),
     owner: (request) => owners.get(request),
     models: () => discoverModels({ baseUrl: options.ollamaBaseUrl }),
     defaultModel:
